@@ -341,14 +341,28 @@ class _ProfileState extends State<Profile> {
                           final confirm = await showDialog<bool>(
                             context: context,
                             builder: (ctx) => AlertDialog(
-                              title: const Text('Sign Out'),
-                              content: const Text(
+                              backgroundColor: cardColor,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              title: Text(
+                                'Sign Out',
+                                style: TextStyle(color: textColor),
+                              ),
+                              content: Text(
                                 'Are you sure you want to sign out?',
+                                style: TextStyle(
+                                  color: Colors.grey[500],
+                                  fontSize: 13,
+                                ),
                               ),
                               actions: [
                                 TextButton(
                                   onPressed: () => Navigator.pop(ctx, false),
-                                  child: const Text('Cancel'),
+                                  child: Text(
+                                    'Cancel',
+                                    style: TextStyle(color: Colors.grey[500]),
+                                  ),
                                 ),
                                 TextButton(
                                   onPressed: () => Navigator.pop(ctx, true),

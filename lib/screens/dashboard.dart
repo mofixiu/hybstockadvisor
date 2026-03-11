@@ -2522,7 +2522,7 @@ class Dashboard extends StatefulWidget {
   State<Dashboard> createState() => _DashboardState();
 }
 
-class _DashboardState extends State<Dashboard> {
+class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMixin {
   // Live API Data List
   List<NigerianStock> _searchableStocks = List.from(defaultNigerianStocks);
   NigerianStock _selectedStock = defaultNigerianStocks.first;
@@ -2536,13 +2536,23 @@ class _DashboardState extends State<Dashboard> {
   List<double> _last5DaysPrices = [0, 0, 0, 0, 0];
   List<String> _last5DaysDates = ['-', '-', '-', '-', '-'];
   String _username = 'User'; // default fallback
+  AnimationController? _shimmerController;
 
   @override
   void initState() {
     super.initState();
+    _shimmerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
     _loadUsername();
-
     _fetchMarketSummaryAndStart();
+  }
+
+  @override
+  void dispose() {
+    _shimmerController?.dispose();
+    super.dispose();
   }
 
   // 1. Fetch the entire market list first
@@ -2788,16 +2798,12 @@ class _DashboardState extends State<Dashboard> {
                     _buildSearchBar(isDark),
                     const SizedBox(height: 20),
 
-                    if (_isLoading)
-                      const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(40.0),
-                          child: CircularProgressIndicator(
-                            color: Color(0xFF2979FF),
-                          ),
-                        ),
+                    if (_isLoading && _shimmerController != null)
+                      _DashboardShimmer(
+                        controller: _shimmerController!,
+                        isDark: isDark,
                       )
-                    else ...[
+                    else if (!_isLoading) ...[
                       _buildSafetyIndexCard(isDark),
                       const SizedBox(height: 5),
                       Center(
@@ -3730,6 +3736,163 @@ class _StockSearchModalState extends State<_StockSearchModal> {
           );
         },
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Dashboard Loading Shimmer
+// ─────────────────────────────────────────────
+class _DashboardShimmer extends StatelessWidget {
+  final AnimationController controller;
+  final bool isDark;
+
+  const _DashboardShimmer({required this.controller, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    final baseColor =
+        isDark ? const Color(0xFF2A2D3E) : const Color(0xFFE0E0E0);
+    final highlightColor =
+        isDark ? const Color(0xFF3A3D4E) : const Color(0xFFF5F5F5);
+    final cardBg = isDark ? const Color(0xFF2A2D3E) : Colors.white;
+    final altCardBg =
+        isDark ? const Color(0xFF2A2D3E) : const Color(0xFFF2F4F7);
+
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final shimmer = LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [baseColor, highlightColor, baseColor],
+          stops: [
+            (controller.value - 0.3).clamp(0.0, 1.0),
+            controller.value.clamp(0.0, 1.0),
+            (controller.value + 0.3).clamp(0.0, 1.0),
+          ],
+        );
+
+        Widget box(double w, double h, {double r = 8}) => Container(
+              width: w,
+              height: h,
+              decoration: BoxDecoration(
+                gradient: shimmer,
+                borderRadius: BorderRadius.circular(r),
+              ),
+            );
+
+        return Column(
+          children: [
+            // ── Safety Index Card placeholder ──
+            Container(
+              width: double.infinity,
+              padding:
+                  const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
+              decoration: BoxDecoration(
+                color: cardBg,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    width: 220,
+                    height: 220,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: shimmer,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    width: 140,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      gradient: shimmer,
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // ── Current Price Card placeholder ──
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: altCardBg,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          box(100, 12),
+                          const SizedBox(height: 8),
+                          box(150, 36),
+                        ],
+                      ),
+                      const Spacer(),
+                      box(72, 32),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  box(double.infinity, 170),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // ── Last 5 Days Card placeholder ──
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: altCardBg,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  box(80, 12),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      box(120, 32),
+                      const SizedBox(width: 8),
+                      box(52, 22, r: 4),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      box(32, 80, r: 6),
+                      box(32, 110, r: 6),
+                      box(32, 65, r: 6),
+                      box(32, 95, r: 6),
+                      box(32, 75, r: 6),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: List.generate(5, (_) => box(28, 10, r: 3)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

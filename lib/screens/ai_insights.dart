@@ -581,7 +581,8 @@ class AiInsights extends StatefulWidget {
   State<AiInsights> createState() => _AiInsightsState();
 }
 
-class _AiInsightsState extends State<AiInsights> {
+class _AiInsightsState extends State<AiInsights>
+    with SingleTickerProviderStateMixin {
   bool _isLoading = true;
 
   // Default fallback states
@@ -597,12 +598,24 @@ class _AiInsightsState extends State<AiInsights> {
   double _rsiImpact = 0.0;
   double _emaImpact = 0.0;
 
+  AnimationController? _shimmerController;
+
   @override
   void initState() {
     super.initState();
+    _shimmerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
     // Grab whatever stock was selected on the Dashboard!
     _ticker = ApiService.currentTicker;
     _fetchInsights();
+  }
+
+  @override
+  void dispose() {
+    _shimmerController?.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchInsights() async {
@@ -657,7 +670,8 @@ class _AiInsightsState extends State<AiInsights> {
             context: context,
             isScrollControlled: true,
             backgroundColor: Colors.transparent,
-            builder: (context) => AiChatSheet(isDark: isDark, currentTicker: _ticker),
+            builder: (context) =>
+                AiChatSheet(isDark: isDark, currentTicker: _ticker),
           );
         },
       ),
@@ -677,9 +691,10 @@ class _AiInsightsState extends State<AiInsights> {
         centerTitle: true,
       ),
       body: SafeArea(
-        child: _isLoading
-            ? const Center(
-                child: CircularProgressIndicator(color: Color(0xFF2979FF)),
+        child: _isLoading && _shimmerController != null
+            ? _AiInsightsShimmer(
+                controller: _shimmerController!,
+                isDark: isDark,
               )
             : Column(
                 children: [
@@ -907,7 +922,7 @@ class _AiInsightsState extends State<AiInsights> {
                                   text: TextSpan(
                                     children: [
                                       TextSpan(
-                                        text: _safetyIndex.toStringAsFixed(0),
+                                        text: _safetyIndex.toStringAsFixed(1),
                                         style: const TextStyle(
                                           color: Colors.white,
                                           fontSize: 48,
@@ -1159,6 +1174,209 @@ class _ImpactBar extends StatelessWidget {
           },
         ),
       ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// AI Insights Loading Shimmer
+// ─────────────────────────────────────────────
+class _AiInsightsShimmer extends StatelessWidget {
+  final AnimationController controller;
+  final bool isDark;
+
+  const _AiInsightsShimmer({required this.controller, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    final baseColor = isDark
+        ? const Color(0xFF2A2D3E)
+        : const Color(0xFFE0E0E0);
+    final highlightColor = isDark
+        ? const Color(0xFF3A3D4E)
+        : const Color(0xFFF5F5F5);
+    final cardColor = isDark ? const Color(0xFF2A2D3E) : Colors.white;
+
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final shimmer = LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [baseColor, highlightColor, baseColor],
+          stops: [
+            (controller.value - 0.3).clamp(0.0, 1.0),
+            controller.value.clamp(0.0, 1.0),
+            (controller.value + 0.3).clamp(0.0, 1.0),
+          ],
+        );
+
+        Widget box(double w, double h, {double r = 8}) => Container(
+          width: w,
+          height: h,
+          decoration: BoxDecoration(
+            gradient: shimmer,
+            borderRadius: BorderRadius.circular(r),
+          ),
+        );
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Header row placeholder ──
+              Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      gradient: shimmer,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: box(double.infinity, 20)),
+                ],
+              ),
+
+              const SizedBox(height: 14),
+
+              // ── Explanation text lines ──
+              box(double.infinity, 14),
+              const SizedBox(height: 6),
+              box(double.infinity, 14),
+              const SizedBox(height: 6),
+              box(200, 14),
+
+              const SizedBox(height: 24),
+
+              // ── 3 MetricCard placeholders ──
+              ...List.generate(3, (i) {
+                return Padding(
+                  padding: EdgeInsets.only(bottom: i < 2 ? 12.0 : 0.0),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 16,
+                    ),
+                    decoration: BoxDecoration(
+                      color: cardColor,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.04),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            gradient: shimmer,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              box(80, 12),
+                              const SizedBox(height: 6),
+                              box(120, 20),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: shimmer,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+
+              const SizedBox(height: 28),
+
+              // ── Key Market Drivers title ──
+              box(180, 22),
+
+              const SizedBox(height: 16),
+
+              // ── Drivers card with 2 impact bar placeholders ──
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: cardColor,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    // Impact bar 1
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [box(100, 14), box(80, 14)],
+                        ),
+                        const SizedBox(height: 10),
+                        box(double.infinity, 28),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    // Impact bar 2
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [box(100, 14), box(80, 14)],
+                        ),
+                        const SizedBox(height: 10),
+                        box(double.infinity, 28),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // ── Safety Index Banner placeholder ──
+              Container(
+                width: double.infinity,
+                height: 160,
+                decoration: BoxDecoration(
+                  gradient: shimmer,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+
+              const SizedBox(height: 20),
+            ],
+          ),
+        );
+      },
     );
   }
 }

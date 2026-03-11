@@ -210,6 +210,46 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> removeFromPortfolio({
+    required String ticker,
+  }) async {
+    try {
+      final box = await Hive.openBox('auth');
+      final userId = box.get('user_id') ?? 1;
+
+      final response = await _dio.delete(
+        '/portfolio/remove',
+        data: {'user_id': userId, 'ticker': ticker},
+      );
+      return response.data;
+    } on DioException catch (e) {
+      return {
+        'status': 'error',
+        'detail': e.response?.data?['detail'] ?? 'Network error',
+      };
+    }
+  }
+
+  static Future<Map<String, dynamic>> removeFromWatchlist({
+    required String ticker,
+  }) async {
+    try {
+      final box = await Hive.openBox('auth');
+      final userId = box.get('user_id') ?? 1;
+
+      final response = await _dio.delete(
+        '/watchlist/remove',
+        data: {'user_id': userId, 'ticker': ticker},
+      );
+      return response.data;
+    } on DioException catch (e) {
+      return {
+        'status': 'error',
+        'detail': e.response?.data?['detail'] ?? 'Network error',
+      };
+    }
+  }
+
   // ── Password Reset Flow ──────────────────────────────────────
 
   static Future<Map<String, dynamic>> forgotPassword(String email) async {
@@ -271,18 +311,22 @@ class ApiService {
       return {'status': 'error', 'detail': 'Network Error. Check connection.'};
     }
   }
+
   // --- AI CHATBOT METHOD ---
-  // --- AI CHATBOT METHOD ---
-  static Future<String> sendChatMessage(String message, {String? currentTicker}) async {
+  static Future<String> sendChatMessage(
+    String message, {
+    String? currentTicker,
+  }) async {
     try {
       final response = await _dio.post(
         '/chat',
         data: {
           'text': message,
-          if (currentTicker != null) 'current_ticker': currentTicker, // Send the ticker to Python!
+          if (currentTicker != null)
+            'current_ticker': currentTicker, // Send the ticker to Python!
         },
       );
-      
+
       if (response.statusCode == 200 && response.data['status'] == 'success') {
         return response.data['reply'];
       }
