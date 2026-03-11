@@ -26,10 +26,14 @@ void main() async {
   await Hive.initFlutter();
   final notificationProvider = NotificationProvider();
   await notificationProvider.loadNotifications();
+
+  final themeProvider = ThemeProvider();
+  await themeProvider.loadFromHive();
+
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (context) => ThemeProvider()),
+        ChangeNotifierProvider<ThemeProvider>.value(value: themeProvider),
         ChangeNotifierProvider<NotificationProvider>.value(
           value: notificationProvider,
         ),

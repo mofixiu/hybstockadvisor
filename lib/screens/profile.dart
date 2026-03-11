@@ -5,7 +5,7 @@ import 'package:hybstockadvisor/screens/auth/login.dart';
 import 'package:hybstockadvisor/screens/notification_settings.dart';
 import 'package:hybstockadvisor/screens/personal_info.dart';
 import 'package:hybstockadvisor/screens/settings.dart';
-import 'package:hybstockadvisor/services/request.dart';
+import 'package:hybstockadvisor/services/api_service.dart';
 import 'package:hybstockadvisor/widgets/bottomNavBar.dart';
 import 'package:hybstockadvisor/widgets/custom_page_route.dart';
 
@@ -377,10 +377,14 @@ class _ProfileState extends State<Profile> {
 
                           if (confirm == true && context.mounted) {
                             // Clear all saved user data & token
-                            await RequestService.clearUserData();
+                            await ApiService.clearUserData();
 
-                            // Navigate to Login and remove all previous routes
-                            context.pushFade(const Login());
+                            if (!context.mounted) return;
+                            // Navigate to Login and CLEAR the entire stack
+                            Navigator.of(context).pushAndRemoveUntil(
+                              MaterialPageRoute(builder: (_) => const Login()),
+                              (route) => false,
+                            );
                           }
                         },
                         icon: const Icon(

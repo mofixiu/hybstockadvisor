@@ -1,8 +1,10 @@
+import 'dart:convert';
 import 'dart:developer';
 import 'dart:io' show Platform;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive/hive.dart';
 import 'package:hybstockadvisor/screens/auth/login.dart';
 
@@ -23,6 +25,7 @@ String get baseUrl => "$host/api";
 
 class ApiService {
   static final navigatorKey = GlobalKey<NavigatorState>();
+  static const _secureStorage = FlutterSecureStorage();
 
   static final Dio _dio = _createDio();
 
@@ -79,13 +82,9 @@ class ApiService {
       InterceptorsWrapper(
         // 🚨 1. NEW: THE INJECTION MIDDLEWARE 🚨
         onRequest: (options, handler) async {
-          // Open Hive and grab the JWT token
-          final authBox = await Hive.openBox('auth');
+          // Read JWT from encrypted secure storage
+          final token = await _secureStorage.read(key: 'auth_token');
 
-          // Note: Make sure 'auth_token' is the exact key you used to save it in your Login screen!
-          final token = authBox.get('auth_token');
-
-          // If the user is logged in, attach the token securely as a Bearer header
           if (token != null) {
             options.headers['Authorization'] = 'Bearer $token';
           }
@@ -101,6 +100,9 @@ class ApiService {
                 path.contains('/auth/login') || path.contains('/auth/register');
 
             if (!isAuthEndpoint) {
+              // Clear secure storage JWT
+              await _secureStorage.delete(key: 'auth_token');
+              // Clear Hive boxes
               final authBox = await Hive.openBox('auth');
               final userBox = await Hive.openBox('user');
               final chatBox = await Hive.openBox('chat_history');
@@ -123,6 +125,81 @@ class ApiService {
   }
 
   static String currentTicker = "GTCO";
+
+  /// Get user_id from Hive or redirect to login if missing.
+  static Future<int?> _getUserId() async {
+    final box = await Hive.openBox('auth');
+    final userId = box.get('user_id');
+    if (userId == null) {
+      // user_id missing — session is invalid, force logout
+      await clearToken();
+      await box.clear();
+      final userBox = await Hive.openBox('user');
+      final chatBox = await Hive.openBox('chat_history');
+      await userBox.clear();
+      await chatBox.clear();
+      navigatorKey.currentState?.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const Login()),
+        (route) => false,
+      );
+      return null;
+    }
+    return userId as int;
+  }
+
+  /// Save JWT token to encrypted secure storage.
+  static Future<void> saveToken(String token) async {
+    await _secureStorage.write(key: 'auth_token', value: token);
+  }
+
+  /// Delete JWT token from secure storage (for logout).
+  static Future<void> clearToken() async {
+    await _secureStorage.delete(key: 'auth_token');
+  }
+
+  /// Read JWT token from secure storage (for splash screen check).
+  static Future<String?> readToken() async {
+    return await _secureStorage.read(key: 'auth_token');
+  }
+
+  /// Check if a JWT token is expired by decoding its payload.
+  static bool isTokenExpired(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return true;
+
+      // Base64-decode the payload (part[1]), adding padding if needed
+      String payload = parts[1];
+      payload = base64Url.normalize(payload);
+      final decoded = utf8.decode(base64Url.decode(payload));
+      final Map<String, dynamic> data = jsonDecode(decoded);
+
+      final exp = data['exp'];
+      if (exp == null) return true;
+
+      final expiry = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
+      return DateTime.now().isAfter(expiry);
+    } catch (_) {
+      return true; // If we can't decode it, treat it as expired
+    }
+  }
+
+  /// Clear all user data (for logout). Replaces RequestService.clearUserData().
+  static Future<void> clearUserData() async {
+    try {
+      await clearToken();
+      final authBox = await Hive.openBox('auth');
+      await authBox.clear();
+      final userBox = await Hive.openBox('user');
+      await userBox.clear();
+      final chatBox = await Hive.openBox('chat_history');
+      await chatBox.clear();
+      log('User data cleared');
+    } catch (e) {
+      log('Error clearing user data: $e');
+    }
+  }
+
   // 2. The specific function to fetch our AI Data
   static Future<Map<String, dynamic>?> getStockForecast(String ticker) async {
     try {
@@ -243,8 +320,9 @@ class ApiService {
   }) async {
     try {
       // 1. Grab the User ID
-      final box = await Hive.openBox('auth');
-      final userId = box.get('user_id') ?? 1;
+      final userId = await _getUserId();
+      if (userId == null)
+        return {'status': 'error', 'detail': 'Session expired'};
 
       final response = await _dio.post(
         '/portfolio/add', // <-- No extra /api here
@@ -268,8 +346,8 @@ class ApiService {
 
   static Future<Map<String, dynamic>?> getUserAssets() async {
     try {
-      final box = await Hive.openBox('auth');
-      final userId = box.get('user_id') ?? 1;
+      final userId = await _getUserId();
+      if (userId == null) return null;
 
       log('📡 Fetching Assets for User: $userId');
       // 2. Fixed the double /api/api typo (Fixed 404 Error)
@@ -289,8 +367,9 @@ class ApiService {
     required String ticker,
   }) async {
     try {
-      final box = await Hive.openBox('auth');
-      final userId = box.get('user_id') ?? 1;
+      final userId = await _getUserId();
+      if (userId == null)
+        return {'status': 'error', 'detail': 'Session expired'};
 
       // 3. Fixed the double /api/api typo
       final response = await _dio.post(
@@ -312,8 +391,9 @@ class ApiService {
     required String ticker,
   }) async {
     try {
-      final box = await Hive.openBox('auth');
-      final userId = box.get('user_id') ?? 1;
+      final userId = await _getUserId();
+      if (userId == null)
+        return {'status': 'error', 'detail': 'Session expired'};
 
       final response = await _dio.delete(
         '/portfolio/remove',
@@ -332,8 +412,9 @@ class ApiService {
     required String ticker,
   }) async {
     try {
-      final box = await Hive.openBox('auth');
-      final userId = box.get('user_id') ?? 1;
+      final userId = await _getUserId();
+      if (userId == null)
+        return {'status': 'error', 'detail': 'Session expired'};
 
       final response = await _dio.delete(
         '/watchlist/remove',
