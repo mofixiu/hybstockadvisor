@@ -1,5 +1,6 @@
 import 'package:hive/hive.dart';
 import 'package:hybstockadvisor/providers/theme_provider.dart';
+import 'package:hybstockadvisor/services/api_service.dart';
 import 'package:hybstockadvisor/providers/notification_provider.dart';
 import 'package:hybstockadvisor/widgets/splash_screen.dart';
 import 'package:flutter/material.dart';
@@ -22,14 +23,16 @@ void main() async {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-await Hive.initFlutter();
+  await Hive.initFlutter();
   final notificationProvider = NotificationProvider();
   await notificationProvider.loadNotifications();
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (context) => ThemeProvider()),
-        ChangeNotifierProvider<NotificationProvider>.value(value: notificationProvider),
+        ChangeNotifierProvider<NotificationProvider>.value(
+          value: notificationProvider,
+        ),
         // ChangeNotifierProvider(create: (context) => UserProvider()),
         // ChangeNotifierProvider(create: (_) => HotelProvider()),
         // ChangeNotifierProvider(create: (_) => BookmarkProvider()),
@@ -49,6 +52,7 @@ class MyApp extends StatelessWidget {
       builder: (context, themeProvider, child) {
         return MaterialApp(
           title: 'HybStockAdvisor',
+          navigatorKey: ApiService.navigatorKey,
           theme: HybStockAdvisor.lightTheme.copyWith(
             textTheme: GoogleFonts.montserratTextTheme(
               HybStockAdvisor.lightTheme.textTheme,
@@ -60,7 +64,7 @@ class MyApp extends StatelessWidget {
             ),
           ),
           themeMode: themeProvider.themeMode,
-          
+
           home: const SplashScreen(),
           debugShowCheckedModeBanner: false,
         );

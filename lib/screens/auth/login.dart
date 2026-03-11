@@ -5,7 +5,6 @@ import 'package:hybstockadvisor/screens/auth/signup.dart';
 import 'package:hybstockadvisor/screens/dashboard.dart';
 import 'package:hybstockadvisor/screens/firstlogin.dart';
 import 'package:hybstockadvisor/services/api_service.dart';
-import 'package:hybstockadvisor/services/request.dart';
 import 'package:hybstockadvisor/themes/theme.dart';
 import 'package:hybstockadvisor/widgets/customButton.dart';
 import 'package:hybstockadvisor/widgets/custom_page_route.dart';
@@ -59,22 +58,41 @@ class _LoginState extends State<Login> {
     //     context.pushFade(hasSetup ? const Dashboard() : const FirstLogin());
     //   }
     // }
+    // if (response['status'] == 'success') {
+    //   String token = response['token'];
+    //   String firstName = response['user_data']['first_name'];
+    //   int userId = response['user_data']['id'];
+
+    //   await RequestService.saveAuthToken(token);
+
+    //   // 🚨 FIX 1: YOU MUST SAVE THE USER ID SO THE API SERVICE KNOWS WHO IS LOGGED IN! 🚨
+    //   final authBox = await Hive.openBox('auth');
+    //   await authBox.put('user_id', userId);
+
+    //   // Save user data to Hive
+    //   final userBox = await Hive.openBox('user');
+    //   await userBox.put('first_name', firstName);
+    //   await userBox.put('last_name', response['user_data']['last_name'] ?? '');
+
     if (response['status'] == 'success') {
       String token = response['token'];
       String firstName = response['user_data']['first_name'];
       int userId = response['user_data']['id'];
 
-      await RequestService.saveAuthToken(token);
-
-      // 🚨 FIX 1: YOU MUST SAVE THE USER ID SO THE API SERVICE KNOWS WHO IS LOGGED IN! 🚨
+      // 🚨 CRITICAL JWT FIX: Save the token directly to the Hive authBox
       final authBox = await Hive.openBox('auth');
+      await authBox.put(
+        'auth_token',
+        token,
+      ); // ApiService looks for this exact key!
       await authBox.put('user_id', userId);
 
-      // Save user data to Hive
+      // Save user data to Hive (For UI display)
       final userBox = await Hive.openBox('user');
       await userBox.put('first_name', firstName);
       await userBox.put('last_name', response['user_data']['last_name'] ?? '');
 
+      // ... keep the rest of your checking setup logic the exact same ...
       // Ask the database if they already have stocks
       bool needsSetup = true;
 

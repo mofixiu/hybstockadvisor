@@ -2,7 +2,9 @@ import 'dart:developer';
 import 'dart:io' show Platform;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
+import 'package:hybstockadvisor/screens/auth/login.dart';
 
 // 1. Point to your Python FastAPI Server (Port 8000)
 String get host {
@@ -20,14 +22,106 @@ String get host {
 String get baseUrl => "$host/api";
 
 class ApiService {
-  static final Dio _dio = Dio(
-    BaseOptions(
-      baseUrl: baseUrl,
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 10),
-      headers: {'Accept': 'application/json'},
-    ),
-  );
+  static final navigatorKey = GlobalKey<NavigatorState>();
+
+  static final Dio _dio = _createDio();
+
+  // static Dio _createDio() {
+  //   final dio = Dio(
+  //     BaseOptions(
+  //       baseUrl: baseUrl,
+  //       connectTimeout: const Duration(seconds: 10),
+  //       receiveTimeout: const Duration(seconds: 10),
+  //       headers: {'Accept': 'application/json'},
+  //     ),
+  //   );
+
+  //   dio.interceptors.add(
+  //     InterceptorsWrapper(
+  //       onError: (DioException e, ErrorInterceptorHandler handler) async {
+  //         if (e.response?.statusCode == 401) {
+  //           final path = e.requestOptions.path;
+  //           final isAuthEndpoint =
+  //               path.contains('/auth/login') || path.contains('/auth/register');
+
+  //           if (!isAuthEndpoint) {
+  //             final authBox = await Hive.openBox('auth');
+  //             final userBox = await Hive.openBox('user');
+  //             final chatBox = await Hive.openBox('chat_history');
+  //             await authBox.clear();
+  //             await userBox.clear();
+  //             await chatBox.clear();
+
+  //             navigatorKey.currentState?.pushAndRemoveUntil(
+  //               MaterialPageRoute(builder: (_) => const Login()),
+  //               (route) => false,
+  //             );
+  //           }
+  //         }
+  //         handler.next(e);
+  //       },
+  //     ),
+  //   );
+
+  //   return dio;
+  // }
+  static Dio _createDio() {
+    final dio = Dio(
+      BaseOptions(
+        baseUrl: baseUrl,
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 10),
+        headers: {'Accept': 'application/json'},
+      ),
+    );
+
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        // 🚨 1. NEW: THE INJECTION MIDDLEWARE 🚨
+        onRequest: (options, handler) async {
+          // Open Hive and grab the JWT token
+          final authBox = await Hive.openBox('auth');
+
+          // Note: Make sure 'auth_token' is the exact key you used to save it in your Login screen!
+          final token = authBox.get('auth_token');
+
+          // If the user is logged in, attach the token securely as a Bearer header
+          if (token != null) {
+            options.headers['Authorization'] = 'Bearer $token';
+          }
+
+          return handler.next(options);
+        },
+
+        // 2. KEEP YOUR EXISTING ERROR MIDDLEWARE
+        onError: (DioException e, ErrorInterceptorHandler handler) async {
+          if (e.response?.statusCode == 401) {
+            final path = e.requestOptions.path;
+            final isAuthEndpoint =
+                path.contains('/auth/login') || path.contains('/auth/register');
+
+            if (!isAuthEndpoint) {
+              final authBox = await Hive.openBox('auth');
+              final userBox = await Hive.openBox('user');
+              final chatBox = await Hive.openBox('chat_history');
+              await authBox.clear();
+              await userBox.clear();
+              await chatBox.clear();
+
+              navigatorKey.currentState?.pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const Login()),
+                (route) => false,
+              );
+            }
+          }
+          handler.next(e);
+        },
+      ),
+    );
+
+    return dio;
+  }
+
   static String currentTicker = "GTCO";
   // 2. The specific function to fetch our AI Data
   static Future<Map<String, dynamic>?> getStockForecast(String ticker) async {
@@ -167,6 +261,8 @@ class ApiService {
         'status': 'error',
         'detail': e.response?.data?['detail'] ?? 'Network error',
       };
+    } catch (e) {
+      return {'status': 'error', 'detail': 'Unexpected error: $e'};
     }
   }
 
@@ -207,6 +303,8 @@ class ApiService {
         'status': 'error',
         'detail': e.response?.data?['detail'] ?? 'Network error',
       };
+    } catch (e) {
+      return {'status': 'error', 'detail': 'Unexpected error: $e'};
     }
   }
 
@@ -326,7 +424,11 @@ class ApiService {
             'current_ticker': currentTicker, // Send the ticker to Python!
         },
       );
-
+      if (response.statusCode == 200 && response.data['reply'] != null) {
+        // 🚨 NEW: Clean the string by replacing all '**' with nothing!
+        String cleanReply = response.data['reply'].replaceAll('**', '');
+        return cleanReply;
+      }
       if (response.statusCode == 200 && response.data['status'] == 'success') {
         return response.data['reply'];
       }

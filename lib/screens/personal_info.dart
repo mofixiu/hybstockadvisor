@@ -186,6 +186,9 @@ class _PersonalInfoState extends State<PersonalInfo> {
     }
 
     setState(() => _isLoading = true);
+    // Yield a frame so the spinner renders before Hive's SynchronousFuture
+    // (returned when the box is already open) completes synchronously.
+    await Future.delayed(Duration.zero);
 
     // TODO: Add ApiService.updateProfile(firstName, lastName) when backend endpoint is ready
     final box = await Hive.openBox('user');

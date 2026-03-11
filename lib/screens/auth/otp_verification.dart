@@ -94,13 +94,20 @@ class _OtpVerificationState extends State<OtpVerification> {
       final resetToken = response['reset_token'] ?? '';
       context.pushFade(ResetPassword(resetToken: resetToken));
     } else {
+      final detail = (response['detail'] as String?) ?? '';
+      final isExpired = detail.toLowerCase().contains('expir');
+      final message = isExpired
+          ? 'OTP expired. Tap "Resend OTP" to get a new code.'
+          : detail.isNotEmpty
+              ? detail
+              : 'Invalid OTP. Please try again.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(response['detail'] ?? 'Invalid OTP. Please try again.'),
+          content: Text(message),
           backgroundColor: Colors.red,
         ),
       );
-      // Clear fields on wrong OTP
+      // Clear fields on wrong/expired OTP
       for (final c in _controllers) c.clear();
       _focusNodes[0].requestFocus();
     }
