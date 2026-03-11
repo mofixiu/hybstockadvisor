@@ -38,6 +38,13 @@ class _AiChatSheetState extends State<AiChatSheet> {
     _loadHistory();
   }
 
+  @override
+  void dispose() {
+    _messageController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;

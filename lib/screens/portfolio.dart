@@ -205,6 +205,19 @@ class _PortfolioState extends State<Portfolio>
         ? "${(item['quantity'] as num).toStringAsFixed(0)} units @ ₦${(item['avg_buy_price'] as num).toStringAsFixed(2)}"
         : "$symbol Plc";
 
+    // return _StockItem(
+    //   symbol: symbol,
+    //   name: subtitle,
+    //   price: '₦${price.toStringAsFixed(2)}',
+    //   change: changeStr,
+    //   isPositive: isPositive,
+    //   dotColor: isPositive ? Colors.green : Colors.red,
+    //   iconBg: const Color(0xFF1C1C1E),
+    //   iconLabel: symbol.substring(0, min(2, symbol.length)),
+    //   iconWidget: null,
+    //   sparkData: spark,
+    //   sparkColor: isPositive ? Colors.green : Colors.red,
+    // );
     return _StockItem(
       symbol: symbol,
       name: subtitle,
@@ -217,6 +230,11 @@ class _PortfolioState extends State<Portfolio>
       iconWidget: null,
       sparkData: spark,
       sparkColor: isPositive ? Colors.green : Colors.red,
+      // 🚨 NEW: Pass the raw numbers!
+      quantity: isPortfolio ? (item['quantity'] as num).toDouble() : null,
+      avgBuyPrice: isPortfolio
+          ? (item['avg_buy_price'] as num).toDouble()
+          : null,
     );
   }
 
@@ -570,6 +588,199 @@ class _PortfolioState extends State<Portfolio>
     );
   }
 
+  // ── Asset Breakdown Sheet ──
+  void _showPortfolioDetailsSheet(_StockItem stock, bool isDark) {
+    if (stock.quantity == null || stock.avgBuyPrice == null) return;
+
+    final bgColor = isDark ? const Color(0xFF1A1A2E) : const Color(0xFFF2F4F7);
+    final cardColor = isDark ? const Color(0xFF2A2D3E) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+
+    // 🧮 Do the Math!
+    double currentPrice =
+        double.tryParse(stock.price.replaceAll('₦', '').replaceAll(',', '')) ??
+        0;
+    double totalCost = stock.quantity! * stock.avgBuyPrice!;
+    double currentValue = stock.quantity! * currentPrice;
+    double profitLoss = currentValue - totalCost;
+    double profitLossPct = (totalCost > 0)
+        ? (profitLoss / totalCost) * 100
+        : 0.0;
+
+    bool inProfit = profitLoss >= 0;
+    Color pnlColor = inProfit ? Colors.green : Colors.red;
+    String sign = inProfit ? "+" : "";
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Drag Handle
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[400],
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Header
+            Text(
+              '${stock.symbol} Asset Breakdown',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: textColor,
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Current Value (Big Number)
+            Text(
+              "Current Value",
+              style: TextStyle(color: Colors.grey[500], fontSize: 14),
+            ),
+            Text(
+              "₦${currentValue.toStringAsFixed(2)}",
+              style: TextStyle(
+                fontSize: 36,
+                fontWeight: FontWeight.bold,
+                color: textColor,
+              ),
+            ),
+
+            // Profit/Loss Badge
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: pnlColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                "$sign₦${profitLoss.abs().toStringAsFixed(2)} ($sign${profitLossPct.toStringAsFixed(2)}%)",
+                style: TextStyle(
+                  color: pnlColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+            const SizedBox(height: 30),
+
+            // Stats Grid
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: cardColor,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  _buildStatRow(
+                    "Total Investment",
+                    "₦${totalCost.toStringAsFixed(2)}",
+                    textColor,
+                  ),
+                  const Divider(height: 24),
+                  _buildStatRow(
+                    "Quantity Owned",
+                    "${stock.quantity?.toStringAsFixed(0)} units",
+                    textColor,
+                  ),
+                  const Divider(height: 24),
+                  _buildStatRow(
+                    "Average Buy Price",
+                    "₦${stock.avgBuyPrice?.toStringAsFixed(2)}",
+                    textColor,
+                  ),
+                  const Divider(height: 24),
+                  _buildStatRow(
+                    "Current Market Price",
+                    "₦${currentPrice.toStringAsFixed(2)}",
+                    textColor,
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 30),
+
+            // Ask AI Button
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0A3D62),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(
+                  Icons.auto_awesome,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                label: Text(
+                  "Ask AI about ${stock.symbol}",
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                ),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (context) => AiChatSheet(
+                      isDark: isDark,
+                      currentTicker: stock.symbol,
+                    ), // Passes context!
+                  );
+                },
+              ),
+            ),
+            SizedBox(height: MediaQuery.of(context).padding.bottom + 10),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatRow(String label, String value, Color textColor) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: TextStyle(color: Colors.grey[500], fontSize: 14)),
+        Text(
+          value,
+          style: TextStyle(
+            color: textColor,
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildNetworkError(Color textColor) {
     return Center(
       child: Padding(
@@ -899,8 +1110,28 @@ class _PortfolioState extends State<Portfolio>
                                   isDark: isDark,
                                   cardColor: cardColor,
                                   textColor: textColor,
+                                  // 🚨 NEW: Trigger the bottom sheet!
+                                  onTap: () {
+                                    if (stock.quantity != null) {
+                                      _showPortfolioDetailsSheet(stock, isDark);
+                                    }
+                                  },
                                 ),
                               ),
+                              // child: Padding(
+                              //   padding: const EdgeInsets.fromLTRB(
+                              //     20,
+                              //     0,
+                              //     20,
+                              //     10,
+                              //   ),
+                              //   child: _StockCard(
+                              //     stock: stock,
+                              //     isDark: isDark,
+                              //     cardColor: cardColor,
+                              //     textColor: textColor,
+                              //   ),
+                              // ),
                             );
                           }, childCount: sorted.length),
                         );
@@ -1360,12 +1591,14 @@ class _StockCard extends StatelessWidget {
   final bool isDark;
   final Color cardColor;
   final Color textColor;
+  final VoidCallback? onTap;
 
   const _StockCard({
     required this.stock,
     required this.isDark,
     required this.cardColor,
     required this.textColor,
+    this.onTap,
   });
 
   @override
@@ -1383,145 +1616,148 @@ class _StockCard extends StatelessWidget {
     }
     double padding = (maxPrice - minPrice) * 0.2;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          // Icon
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: stock.iconBg,
-              borderRadius: BorderRadius.circular(10),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
             ),
-            child: Center(
-              child: Text(
-                stock.iconLabel,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  color: Colors.white,
+          ],
+        ),
+        child: Row(
+          children: [
+            // Icon
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: stock.iconBg,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Center(
+                child: Text(
+                  stock.iconLabel,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(width: 12),
+            const SizedBox(width: 12),
 
-          // Symbol + Auto-Scrolling Name
-          Expanded(
-            flex: 5, // Give text more room
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      stock.symbol,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                        color: textColor,
+            // Symbol + Auto-Scrolling Name
+            Expanded(
+              flex: 5, // Give text more room
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        stock.symbol,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          color: textColor,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 6),
-                    Container(
-                      width: 7,
-                      height: 7,
-                      decoration: BoxDecoration(
-                        color: stock.dotColor,
-                        shape: BoxShape.circle,
+                      const SizedBox(width: 6),
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: stock.dotColor,
+                          shape: BoxShape.circle,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                // 🚀 THE MAGIC SCROLLING WIDGET 🚀
-                TextScroll(
-                  stock.name,
-                  style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                  velocity: const Velocity(pixelsPerSecond: Offset(30, 0)),
-                  delayBefore: const Duration(seconds: 2),
-                  pauseBetween: const Duration(seconds: 2),
-                  mode: TextScrollMode
-                      .bouncing, // Bounces back and forth if it overflows
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(width: 10),
-
-          // Sparkline (Given fixed width to stop it from crushing the text)
-          SizedBox(
-            width: 60,
-            height: 40,
-            child: LineChart(
-              LineChartData(
-                minX: 0,
-                maxX: (stock.sparkData.length - 1).toDouble(),
-                minY: minPrice - padding,
-                maxY: maxPrice + padding,
-                gridData: FlGridData(show: false),
-                borderData: FlBorderData(show: false),
-                titlesData: FlTitlesData(show: false),
-                lineTouchData: LineTouchData(enabled: false),
-                lineBarsData: [
-                  LineChartBarData(
-                    spots: stock.sparkData
-                        .asMap()
-                        .entries
-                        .map((e) => FlSpot(e.key.toDouble(), e.value))
-                        .toList(),
-                    isCurved: true,
-                    color: stock.sparkColor,
-                    barWidth: 2,
-                    isStrokeCapRound: true,
-                    dotData: FlDotData(show: false),
-                    belowBarData: BarAreaData(show: false),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  // 🚀 THE MAGIC SCROLLING WIDGET 🚀
+                  TextScroll(
+                    stock.name,
+                    style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                    velocity: const Velocity(pixelsPerSecond: Offset(30, 0)),
+                    delayBefore: const Duration(seconds: 2),
+                    pauseBetween: const Duration(seconds: 2),
+                    mode: TextScrollMode
+                        .bouncing, // Bounces back and forth if it overflows
                   ),
                 ],
               ),
             ),
-          ),
 
-          const SizedBox(width: 10),
+            const SizedBox(width: 10),
 
-          // Price + Change
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                stock.price,
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  color: textColor,
+            // Sparkline (Given fixed width to stop it from crushing the text)
+            SizedBox(
+              width: 60,
+              height: 40,
+              child: LineChart(
+                LineChartData(
+                  minX: 0,
+                  maxX: (stock.sparkData.length - 1).toDouble(),
+                  minY: minPrice - padding,
+                  maxY: maxPrice + padding,
+                  gridData: FlGridData(show: false),
+                  borderData: FlBorderData(show: false),
+                  titlesData: FlTitlesData(show: false),
+                  lineTouchData: LineTouchData(enabled: false),
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: stock.sparkData
+                          .asMap()
+                          .entries
+                          .map((e) => FlSpot(e.key.toDouble(), e.value))
+                          .toList(),
+                      isCurved: true,
+                      color: stock.sparkColor,
+                      barWidth: 2,
+                      isStrokeCapRound: true,
+                      dotData: FlDotData(show: false),
+                      belowBarData: BarAreaData(show: false),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                stock.change,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: stock.isPositive ? Colors.green : Colors.red,
+            ),
+
+            const SizedBox(width: 10),
+
+            // Price + Change
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  stock.price,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: textColor,
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+                const SizedBox(height: 2),
+                Text(
+                  stock.change,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: stock.isPositive ? Colors.green : Colors.red,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1741,6 +1977,36 @@ class _StockPickerModalState extends State<_StockPickerModal> {
 // ─────────────────────────────────────────────
 // Data model
 // ─────────────────────────────────────────────
+// class _StockItem {
+//   final String symbol;
+//   final String name;
+//   final String price;
+//   final String change;
+//   final bool isPositive;
+//   final Color dotColor;
+//   final Color iconBg;
+//   final String iconLabel;
+//   final Widget? iconWidget;
+//   final List<double> sparkData;
+//   final Color sparkColor;
+
+//   const _StockItem({
+//     required this.symbol,
+//     required this.name,
+//     required this.price,
+//     required this.change,
+//     required this.isPositive,
+//     required this.dotColor,
+//     required this.iconBg,
+//     required this.iconLabel,
+//     required this.iconWidget,
+//     required this.sparkData,
+//     required this.sparkColor,
+//   });
+// }
+// ─────────────────────────────────────────────
+// Data model
+// ─────────────────────────────────────────────
 class _StockItem {
   final String symbol;
   final String name;
@@ -1754,6 +2020,10 @@ class _StockItem {
   final List<double> sparkData;
   final Color sparkColor;
 
+  // 🚨 NEW: Added these so we can do math in the bottom sheet!
+  final double? quantity;
+  final double? avgBuyPrice;
+
   const _StockItem({
     required this.symbol,
     required this.name,
@@ -1766,5 +2036,7 @@ class _StockItem {
     required this.iconWidget,
     required this.sparkData,
     required this.sparkColor,
+    this.quantity,
+    this.avgBuyPrice,
   });
 }

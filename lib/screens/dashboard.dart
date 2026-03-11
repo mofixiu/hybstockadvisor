@@ -428,7 +428,7 @@ class _DashboardState extends State<Dashboard>
                           child: GestureDetector(
                             onTap: () => context.pushFade(const AiInsights()),
                             child: Text(
-                              "For safety index explaination, click here",
+                              "For safety index explanation, click here",
                               style: TextStyle(
                                 color: Color(0xFF3D5A80),
                                 fontSize: 12,
