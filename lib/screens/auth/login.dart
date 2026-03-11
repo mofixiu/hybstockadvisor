@@ -23,6 +23,8 @@ class _LoginState extends State<Login> {
   bool _isPasswordVisible = false;
   bool _isLoading = false;
   Future<void> handleLogin() async {
+    if (_isLoading) return;
+
     if (emailController.text.isEmpty || passwordController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -122,11 +124,16 @@ class _LoginState extends State<Login> {
         // 🚨 FIX 2: DESTROY OLD SCREENS 🚨
         // pushFade keeps the old user's Dashboard hidden in the background.
         // pushAndRemoveUntil completely wipes the slate clean for the new user.
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(
-            builder: (context) =>
-                needsSetup ? const FirstLogin() : const Dashboard(),
-          ),
+        // Navigator.of(context).pushAndRemoveUntil(
+        //   MaterialPageRoute(
+        //     builder: (context) =>
+        //         needsSetup ? const FirstLogin() : const Dashboard(),
+        //   ),
+        //   (Route<dynamic> route) => false,
+        // );
+
+        context.pushFadeAndRemoveUntil(
+          needsSetup ? const FirstLogin() : const Dashboard(),
           (Route<dynamic> route) => false,
         );
       }

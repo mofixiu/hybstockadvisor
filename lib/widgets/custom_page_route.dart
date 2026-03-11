@@ -118,6 +118,10 @@ extension NavigationExtension on BuildContext {
   Future<T?> pushSlide<T>(Widget page) {
     return Navigator.push(this, SlidePageRoute(page: page));
   }
+  /// Navigate and remove until with fade transition
+  Future<T?> pushFadeAndRemoveUntil<T>(Widget page, bool Function(Route<dynamic>) predicate) {
+    return Navigator.pushAndRemoveUntil(this, FadePageRoute(page: page), predicate);
+  }
 
   /// Navigate and replace with slide transition
   Future<T?> pushReplacementSlide<T, TO>(Widget page) {
