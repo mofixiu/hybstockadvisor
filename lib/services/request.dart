@@ -113,9 +113,6 @@ class RequestService {
     return post('/auth/login', {'email': email, 'password': password});
   }
 
-  
-
-  
   // Password Reset Methods
   static Future<Map<String, dynamic>?> forgotPassword(String email) async {
     return post('/auth/forgot-password', {'email': email});
@@ -378,6 +375,9 @@ class RequestService {
 
       final userBox = await Hive.openBox('user');
       await userBox.clear();
+
+      final chatBox = await Hive.openBox('chat_history');
+      await chatBox.clear();
 
       _authToken = null;
       log('User data cleared');

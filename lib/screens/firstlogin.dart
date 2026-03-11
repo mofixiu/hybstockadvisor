@@ -235,16 +235,30 @@ class _FirstLoginState extends State<FirstLogin> {
     setState(() => _isSubmitting = true);
 
     try {
-      // Submit each stock to the API
+      // Submit each stock to the API — bail immediately on first failure
       for (final entry in _selectedStocks) {
-        await ApiService.addToPortfolio(
+        final res = await ApiService.addToPortfolio(
           ticker: entry.stock.symbol,
           quantity: entry.quantity,
           avgBuyPrice: entry.avgBuyPrice,
         );
+        if (res['status'] != 'success') {
+          if (!mounted) return;
+          setState(() => _isSubmitting = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                res['detail'] ??
+                    'Failed to save ${entry.stock.symbol}. Please try again.',
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
       }
 
-      // Mark first login as done in Hive
+      // All stocks saved — mark first login as done
       final box = await Hive.openBox('user');
       await box.put('has_setup_portfolio', true);
 
@@ -252,15 +266,14 @@ class _FirstLoginState extends State<FirstLogin> {
         context.pushFade(const Dashboard());
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isSubmitting = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error saving portfolio: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error saving portfolio: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
+import 'package:hybstockadvisor/providers/notification_provider.dart';
 import 'package:hybstockadvisor/providers/theme_provider.dart';
 import 'package:hybstockadvisor/screens/auth/otp_verification.dart';
 import 'package:hybstockadvisor/services/api_service.dart';
 import 'package:hybstockadvisor/widgets/custom_page_route.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -14,6 +16,23 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  String _appVersion = '1.0.0';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() => _appVersion = '${info.version} (${info.buildNumber})');
+      }
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -160,6 +179,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       );
 
                       if (confirm == true && mounted) {
+                        // Clear notification history
+                        await Provider.of<NotificationProvider>(
+                          context,
+                          listen: false,
+                        ).clearAll();
+
                         final box = await Hive.openBox('user');
                         // Preserve account-critical keys
                         final keep = {
@@ -200,7 +225,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     iconBg: const Color(0xFFDCEAFF),
                     iconColor: const Color(0xFF2979FF),
                     label: 'Version',
-                    value: '1.0.0',
+                    value: _appVersion,
                     textColor: textColor,
                   ),
                 ],

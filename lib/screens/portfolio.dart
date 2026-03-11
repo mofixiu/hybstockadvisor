@@ -1,1309 +1,3 @@
-// import 'package:flutter/material.dart';
-// import 'package:fl_chart/fl_chart.dart';
-// import 'package:hybstockadvisor/widgets/bottomNavBar.dart';
-
-// class Portfolio extends StatefulWidget {
-//   const Portfolio({super.key});
-
-//   @override
-//   State<Portfolio> createState() => _PortfolioState();
-// }
-
-// class _PortfolioState extends State<Portfolio> {
-//   // int _selectedFilter = 0;
-//   // final List<String> _filters = [
-//   //   'All Stocks',
-//   //   'Safe Bets',
-//   //   'High Growth',
-//   //   'Crypto',
-//   // ];
-
-//   final List<_StockItem> _stocks = [
-//     _StockItem(
-//       symbol: 'DANGCEM',
-//       name: 'Dangote Cement',
-//       price: '\₦809.90',
-//       change: '+0.85%',
-//       isPositive: true,
-//       dotColor: Colors.green,
-//       iconBg: const Color(0xFF1C1C1E),
-//       iconLabel: '',
-//       iconWidget: Icon(Icons.apple, color: Colors.white, size: 20),
-//       sparkData: [2.0, 2.5, 2.2, 2.8, 3.0, 2.9, 3.2],
-//       sparkColor: Colors.green,
-//     ),
-//     _StockItem(
-//       symbol: 'ARADEL',
-//       name: 'ARADEL Holdings PLC',
-//       price: '\₦1300.40',
-//       change: '-0.12%',
-//       isPositive: false,
-//       dotColor: Colors.orange,
-//       iconBg: const Color(0xFF1C1C1E),
-//       iconLabel: 'T',
-//       iconWidget: null,
-//       sparkData: [3.0, 2.5, 3.2, 2.8, 3.1, 2.7, 2.9],
-//       sparkColor: Colors.orange,
-//     ),
-//     _StockItem(
-//       symbol: 'GTCO',
-//       name: 'Guaranty Trust',
-//       price: '\₦119.00',
-//       change: '-2.45%',
-//       isPositive: false,
-//       dotColor: Colors.red,
-//       iconBg: const Color(0xFFEEEEFF),
-//       iconLabel: 'GT',
-//       iconWidget: null,
-//       sparkData: [3.5, 3.2, 2.9, 2.5, 2.2, 2.0, 1.8],
-//       sparkColor: Colors.red,
-//     ),
-//     _StockItem(
-//       symbol: 'BUACEMENT',
-//       name: 'BUA Cement Plc.',
-//       price: '\₦219.18',
-//       change: '+4.20%',
-//       isPositive: true,
-//       dotColor: Colors.green,
-//       iconBg: const Color(0xFF1C1C1E),
-//       iconLabel: '',
-//       iconWidget: Icon(Icons.memory, color: Colors.green, size: 20),
-//       sparkData: [1.8, 2.2, 2.5, 2.8, 3.0, 3.3, 3.5],
-//       sparkColor: Colors.green,
-//     ),
-//     _StockItem(
-//       symbol: 'SEPLAT',
-//       name: 'Seplat Energy PLC',
-//       price: '\₦9099.90',
-//       change: '-0.85%',
-//       isPositive: false,
-//       dotColor: Colors.red,
-//       iconBg: const Color(0xFFFFF3E0),
-//       iconLabel: '₿',
-//       iconWidget: null,
-//       sparkData: [2.8, 2.5, 2.9, 2.7, 3.0, 2.8, 3.1],
-//       sparkColor: Colors.orange,
-//     ),
-//   ];
-//   final List<_StockItem> _watchlist = [
-//     _StockItem(
-//       symbol: 'DANGCEM',
-//       name: 'Dangote Cement',
-//       price: '\₦809.90',
-//       change: '+0.85%',
-//       isPositive: true,
-//       dotColor: Colors.green,
-//       iconBg: const Color(0xFF1C1C1E),
-//       iconLabel: '',
-//       iconWidget: Icon(Icons.apple, color: Colors.white, size: 20),
-//       sparkData: [2.0, 2.5, 2.2, 2.8, 3.0, 2.9, 3.2],
-//       sparkColor: Colors.green,
-//     ),
-//     _StockItem(
-//       symbol: 'ARADEL',
-//       name: 'ARADEL Holdings PLC',
-//       price: '\₦1300.40',
-//       change: '-0.12%',
-//       isPositive: false,
-//       dotColor: Colors.orange,
-//       iconBg: const Color(0xFF1C1C1E),
-//       iconLabel: 'T',
-//       iconWidget: null,
-//       sparkData: [3.0, 2.5, 3.2, 2.8, 3.1, 2.7, 2.9],
-//       sparkColor: Colors.orange,
-//     ),
-//     _StockItem(
-//       symbol: 'GTCO',
-//       name: 'Guaranty Trust',
-//       price: '\₦119.00',
-//       change: '-2.45%',
-//       isPositive: false,
-//       dotColor: Colors.red,
-//       iconBg: const Color(0xFFEEEEFF),
-//       iconLabel: 'GT',
-//       iconWidget: null,
-//       sparkData: [3.5, 3.2, 2.9, 2.5, 2.2, 2.0, 1.8],
-//       sparkColor: Colors.red,
-//     ),
-//     _StockItem(
-//       symbol: 'BUACEMENT',
-//       name: 'BUA Cement Plc.',
-//       price: '\₦219.18',
-//       change: '+4.20%',
-//       isPositive: true,
-//       dotColor: Colors.green,
-//       iconBg: const Color(0xFF1C1C1E),
-//       iconLabel: '',
-//       iconWidget: Icon(Icons.memory, color: Colors.green, size: 20),
-//       sparkData: [1.8, 2.2, 2.5, 2.8, 3.0, 3.3, 3.5],
-//       sparkColor: Colors.green,
-//     ),
-//     _StockItem(
-//       symbol: 'SEPLAT',
-//       name: 'Seplat Energy PLC',
-//       price: '\₦9099.90',
-//       change: '-0.85%',
-//       isPositive: false,
-//       dotColor: Colors.red,
-//       iconBg: const Color(0xFFFFF3E0),
-//       iconLabel: '₿',
-//       iconWidget: null,
-//       sparkData: [2.8, 2.5, 2.9, 2.7, 3.0, 2.8, 3.1],
-//       sparkColor: Colors.orange,
-//     ),
-//   ];
-
-//   @override
-//   Widget build(BuildContext context) {
-//     final isDark = Theme.of(context).brightness == Brightness.dark;
-//     final bgColor = isDark ? const Color(0xFF1A1A2E) : const Color(0xFFF2F4F7);
-//     final cardColor = isDark ? const Color(0xFF2A2D3E) : Colors.white;
-//     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
-
-//     return Scaffold(
-//       backgroundColor: bgColor,
-//       bottomNavigationBar: const BottomNavBar(currentIndex: 2),
-//       body: SafeArea(
-//         child: CustomScrollView(
-//           slivers: [
-//             // ── Header ──
-//             SliverToBoxAdapter(
-//               child: Padding(
-//                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-//                 child: Row(
-//                   crossAxisAlignment: CrossAxisAlignment.start,
-//                   children: [
-//                     Column(
-//                       crossAxisAlignment: CrossAxisAlignment.start,
-//                       children: [
-//                         Text(
-//                           'Portfolio',
-//                           style: TextStyle(
-//                             fontSize: 26,
-//                             fontWeight: FontWeight.bold,
-//                             color: textColor,
-//                           ),
-//                         ),
-//                         Text(
-//                           'HybStockAdvisor',
-//                           style: TextStyle(
-//                             fontSize: 13,
-//                             color: const Color(0xFF2979FF),
-//                             fontWeight: FontWeight.w500,
-//                           ),
-//                         ),
-//                       ],
-//                     ),
-//                     const Spacer(),
-//                     Container(
-//                       width: 40,
-//                       height: 40,
-//                       decoration: BoxDecoration(
-//                         color: cardColor,
-//                         shape: BoxShape.circle,
-//                         boxShadow: [
-//                           BoxShadow(
-//                             color: Colors.black.withOpacity(0.07),
-//                             blurRadius: 6,
-//                             offset: const Offset(0, 2),
-//                           ),
-//                         ],
-//                       ),
-//                       child: Icon(
-//                         Icons.add,
-//                         color: const Color(0xFF2979FF),
-//                         size: 22,
-//                       ),
-//                     ),
-//                   ],
-//                 ),
-//               ),
-//             ),
-
-//             // ── Search Bar ──
-//             SliverToBoxAdapter(
-//               child: Padding(
-//                 padding: const EdgeInsets.symmetric(
-//                   horizontal: 20,
-//                   vertical: 14,
-//                 ),
-//                 child: Container(
-//                   padding: const EdgeInsets.symmetric(
-//                     horizontal: 16,
-//                     vertical: 12,
-//                   ),
-//                   decoration: BoxDecoration(
-//                     color: cardColor,
-//                     borderRadius: BorderRadius.circular(14),
-//                     boxShadow: [
-//                       BoxShadow(
-//                         color: Colors.black.withOpacity(0.05),
-//                         blurRadius: 6,
-//                         offset: const Offset(0, 2),
-//                       ),
-//                     ],
-//                   ),
-//                   child: Row(
-//                     children: [
-//                       Icon(Icons.search, color: Colors.grey[400], size: 20),
-//                       const SizedBox(width: 10),
-//                       Text(
-//                         'Search symbol, company...',
-//                         style: TextStyle(color: Colors.grey[400], fontSize: 14),
-//                       ),
-//                     ],
-//                   ),
-//                 ),
-//               ),
-//             ),
-
-//             // // ── Filter Chips ──
-//             // SliverToBoxAdapter(
-//             //   child: SizedBox(
-//             //     height: 40,
-//             //     child: ListView.separated(
-//             //       scrollDirection: Axis.horizontal,
-//             //       padding: const EdgeInsets.symmetric(horizontal: 20),
-//             //       itemCount: _filters.length,
-//             //       separatorBuilder: (_, __) => const SizedBox(width: 10),
-//             //       itemBuilder: (context, i) {
-//             //         final selected = _selectedFilter == i;
-//             //         return GestureDetector(
-//             //           onTap: () => setState(() => _selectedFilter = i),
-//             //           child: AnimatedContainer(
-//             //             duration: const Duration(milliseconds: 200),
-//             //             padding: const EdgeInsets.symmetric(
-//             //               horizontal: 18,
-//             //               vertical: 8,
-//             //             ),
-//             //             decoration: BoxDecoration(
-//             //               color: selected ? Color(0xFF0A3D62) : cardColor,
-//             //               borderRadius: BorderRadius.circular(20),
-//             //               boxShadow: [
-//             //                 BoxShadow(
-//             //                   color: Colors.black.withOpacity(0.05),
-//             //                   blurRadius: 4,
-//             //                 ),
-//             //               ],
-//             //             ),
-//             //             child: Text(
-//             //               _filters[i],
-//             //               style: TextStyle(
-//             //                 color: selected ? Colors.white : Colors.grey[500],
-//             //                 fontWeight: selected
-//             //                     ? FontWeight.bold
-//             //                     : FontWeight.normal,
-//             //                 fontSize: 13,
-//             //               ),
-//             //             ),
-//             //           ),
-//             //         );
-//             //       },
-//             //     ),
-//             //   ),
-//             // ),
-//             // const SliverToBoxAdapter(child: SizedBox(height: 16)),
-
-//             // // ── Portfolio Health Card ──
-//             // SliverToBoxAdapter(
-//             //   child: Padding(
-//             //     padding: const EdgeInsets.symmetric(horizontal: 20),
-//             //     child: Container(
-//             //       padding: const EdgeInsets.all(20),
-//             //       decoration: BoxDecoration(
-//             //         color: cardColor,
-//             //         borderRadius: BorderRadius.circular(18),
-//             //         boxShadow: [
-//             //           BoxShadow(
-//             //             color: Colors.black.withOpacity(0.06),
-//             //             blurRadius: 8,
-//             //             offset: const Offset(0, 2),
-//             //           ),
-//             //         ],
-//             //       ),
-//             //       child: Row(
-//             //         children: [
-//             //           Expanded(
-//             //             child: Column(
-//             //               crossAxisAlignment: CrossAxisAlignment.start,
-//             //               children: [
-//             //                 Text(
-//             //                   'PORTFOLIO HEALTH',
-//             //                   style: TextStyle(
-//             //                     fontSize: 10,
-//             //                     letterSpacing: 1.2,
-//             //                     color: Colors.grey[500],
-//             //                     fontWeight: FontWeight.w600,
-//             //                   ),
-//             //                 ),
-//             //                 const SizedBox(height: 6),
-//             //                 Text(
-//             //                   '\$24,593.00',
-//             //                   style: TextStyle(
-//             //                     fontSize: 26,
-//             //                     fontWeight: FontWeight.bold,
-//             //                     color: textColor,
-//             //                   ),
-//             //                 ),
-//             //                 const SizedBox(height: 8),
-//             //                 Row(
-//             //                   children: [
-//             //                     Container(
-//             //                       padding: const EdgeInsets.symmetric(
-//             //                         horizontal: 8,
-//             //                         vertical: 4,
-//             //                       ),
-//             //                       decoration: BoxDecoration(
-//             //                         color: Colors.green.withOpacity(0.12),
-//             //                         borderRadius: BorderRadius.circular(6),
-//             //                       ),
-//             //                       child: Row(
-//             //                         children: const [
-//             //                           Icon(
-//             //                             Icons.trending_up,
-//             //                             color: Colors.green,
-//             //                             size: 13,
-//             //                           ),
-//             //                           SizedBox(width: 4),
-//             //                           Text(
-//             //                             '+1.2%',
-//             //                             style: TextStyle(
-//             //                               color: Colors.green,
-//             //                               fontSize: 12,
-//             //                               fontWeight: FontWeight.bold,
-//             //                             ),
-//             //                           ),
-//             //                         ],
-//             //                       ),
-//             //                     ),
-//             //                     const SizedBox(width: 8),
-//             //                     Text(
-//             //                       'Today',
-//             //                       style: TextStyle(
-//             //                         color: Colors.grey[500],
-//             //                         fontSize: 12,
-//             //                       ),
-//             //                     ),
-//             //                   ],
-//             //                 ),
-//             //               ],
-//             //             ),
-//             //           ),
-//             //           // Mini sparkline
-//             //           SizedBox(
-//             //             width: 110,
-//             //             height: 60,
-//             //             child: LineChart(
-//             //               LineChartData(
-//             //                 minX: 0,
-//             //                 maxX: 6,
-//             //                 minY: 0,
-//             //                 maxY: 5,
-//             //                 gridData: FlGridData(show: false),
-//             //                 borderData: FlBorderData(show: false),
-//             //                 titlesData: FlTitlesData(
-//             //                   leftTitles: AxisTitles(
-//             //                     sideTitles: SideTitles(showTitles: false),
-//             //                   ),
-//             //                   rightTitles: AxisTitles(
-//             //                     sideTitles: SideTitles(showTitles: false),
-//             //                   ),
-//             //                   topTitles: AxisTitles(
-//             //                     sideTitles: SideTitles(showTitles: false),
-//             //                   ),
-//             //                   bottomTitles: AxisTitles(
-//             //                     sideTitles: SideTitles(showTitles: false),
-//             //                   ),
-//             //                 ),
-//             //                 lineTouchData: LineTouchData(enabled: false),
-//             //                 lineBarsData: [
-//             //                   LineChartBarData(
-//             //                     spots: const [
-//             //                       FlSpot(0, 2.0),
-//             //                       FlSpot(1, 2.8),
-//             //                       FlSpot(2, 2.3),
-//             //                       FlSpot(3, 3.2),
-//             //                       FlSpot(4, 2.7),
-//             //                       FlSpot(5, 3.8),
-//             //                       FlSpot(6, 3.5),
-//             //                     ],
-//             //                     isCurved: true,
-//             //                     color: const Color(0xFF2979FF),
-//             //                     barWidth: 2.5,
-//             //                     isStrokeCapRound: true,
-//             //                     dotData: FlDotData(show: false),
-//             //                     belowBarData: BarAreaData(
-//             //                       show: true,
-//             //                       gradient: LinearGradient(
-//             //                         begin: Alignment.topCenter,
-//             //                         end: Alignment.bottomCenter,
-//             //                         colors: [
-//             //                           const Color(0xFF2979FF).withOpacity(0.18),
-//             //                           const Color(0xFF2979FF).withOpacity(0.0),
-//             //                         ],
-//             //                       ),
-//             //                     ),
-//             //                   ),
-//             //                 ],
-//             //               ),
-//             //             ),
-//             //           ),
-//             //         ],
-//             //       ),
-//             //     ),
-//             //   ),
-//             // ),
-//             const SliverToBoxAdapter(child: SizedBox(height: 24)),
-
-//             // ── Your Stocks Header ──
-//             SliverToBoxAdapter(
-//               child: Padding(
-//                 padding: const EdgeInsets.symmetric(horizontal: 20),
-//                 child: Row(
-//                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-//                   children: [
-//                     Text(
-//                       'Your Stocks',
-//                       style: TextStyle(
-//                         fontSize: 18,
-//                         fontWeight: FontWeight.bold,
-//                         color: textColor,
-//                       ),
-//                     ),
-//                     Text(
-//                       'Sort by',
-//                       style: TextStyle(
-//                         fontSize: 13,
-//                         color: const Color(0xFF2979FF),
-//                         fontWeight: FontWeight.w500,
-//                       ),
-//                     ),
-//                   ],
-//                 ),
-//               ),
-//             ),
-
-//             const SliverToBoxAdapter(child: SizedBox(height: 12)),
-
-//             // ── Stock List ──
-//             SliverList(
-//               delegate: SliverChildBuilderDelegate((context, index) {
-//                 final stock = _stocks[index];
-//                 return Padding(
-//                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-//                   child: _StockCard(
-//                     stock: stock,
-//                     isDark: isDark,
-//                     cardColor: cardColor,
-//                     textColor: textColor,
-//                   ),
-//                 );
-//               }, childCount: _stocks.length),
-//             ),
-
-//             const SliverToBoxAdapter(child: SizedBox(height: 12)),
-//             // ── Your Watchlist Header ──
-//             SliverToBoxAdapter(
-//               child: Padding(
-//                 padding: const EdgeInsets.symmetric(horizontal: 20),
-//                 child: Row(
-//                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-//                   children: [
-//                     Text(
-//                       'Your Watchlist',
-//                       style: TextStyle(
-//                         fontSize: 18,
-//                         fontWeight: FontWeight.bold,
-//                         color: textColor,
-//                       ),
-//                     ),
-//                     Text(
-//                       'Sort by',
-//                       style: TextStyle(
-//                         fontSize: 13,
-//                         color: const Color(0xFF2979FF),
-//                         fontWeight: FontWeight.w500,
-//                       ),
-//                     ),
-//                   ],
-//                 ),
-//               ),
-//             ),
-
-//             const SliverToBoxAdapter(child: SizedBox(height: 12)),
-
-//             // ── Watch List ──
-//             SliverList(
-//               delegate: SliverChildBuilderDelegate((context, index) {
-//                 final stock = _watchlist[index];
-//                 return Padding(
-//                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-//                   child: _StockCard(
-//                     stock: stock,
-//                     isDark: isDark,
-//                     cardColor: cardColor,
-//                     textColor: textColor,
-//                   ),
-//                 );
-//               }, childCount: _watchlist.length),
-//             ),
-
-//             const SliverToBoxAdapter(child: SizedBox(height: 12)),
-//           ],
-//         ),
-//       ),
-//     );
-//   }
-// }
-
-// // ─────────────────────────────────────────────
-// // Stock Card
-// // ─────────────────────────────────────────────
-// class _StockCard extends StatelessWidget {
-//   final _StockItem stock;
-//   final bool isDark;
-//   final Color cardColor;
-//   final Color textColor;
-
-//   const _StockCard({
-//     required this.stock,
-//     required this.isDark,
-//     required this.cardColor,
-//     required this.textColor,
-//   });
-
-//   @override
-//   Widget build(BuildContext context) {
-//     return Container(
-//       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-//       decoration: BoxDecoration(
-//         color: cardColor,
-//         borderRadius: BorderRadius.circular(16),
-//         boxShadow: [
-//           BoxShadow(
-//             color: Colors.black.withOpacity(0.05),
-//             blurRadius: 6,
-//             offset: const Offset(0, 2),
-//           ),
-//         ],
-//       ),
-//       child: Row(
-//         children: [
-//           // Icon
-//           Container(
-//             width: 44,
-//             height: 44,
-//             decoration: BoxDecoration(
-//               color: stock.iconBg,
-//               borderRadius: BorderRadius.circular(10),
-//             ),
-//             child: stock.iconWidget != null
-//                 ? Center(child: stock.iconWidget)
-//                 : Center(
-//                     child: Text(
-//                       stock.iconLabel,
-//                       style: TextStyle(
-//                         fontWeight: FontWeight.bold,
-//                         fontSize: stock.iconLabel.length > 1 ? 13 : 16,
-//                         color: stock.iconBg == const Color(0xFFEEEEFF)
-//                             ? const Color(0xFF2979FF)
-//                             : stock.iconBg == const Color(0xFFFFF3E0)
-//                             ? Colors.orange
-//                             : Colors.white,
-//                       ),
-//                     ),
-//                   ),
-//           ),
-
-//           const SizedBox(width: 12),
-
-//           // Symbol + Name + dot
-//           Column(
-//             crossAxisAlignment: CrossAxisAlignment.start,
-//             children: [
-//               Row(
-//                 children: [
-//                   Text(
-//                     stock.symbol,
-//                     style: TextStyle(
-//                       fontWeight: FontWeight.bold,
-//                       fontSize: 15,
-//                       color: textColor,
-//                     ),
-//                   ),
-//                   const SizedBox(width: 6),
-//                   Container(
-//                     width: 7,
-//                     height: 7,
-//                     decoration: BoxDecoration(
-//                       color: stock.dotColor,
-//                       shape: BoxShape.circle,
-//                     ),
-//                   ),
-//                 ],
-//               ),
-//               const SizedBox(height: 2),
-//               Text(
-//                 stock.name,
-//                 style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-//               ),
-//             ],
-//           ),
-
-//           const SizedBox(width: 10),
-
-//           // Sparkline
-//           Expanded(
-//             child: SizedBox(
-//               height: 40,
-//               child: LineChart(
-//                 LineChartData(
-//                   minX: 0,
-//                   maxX: 6,
-//                   minY: 0,
-//                   maxY: 5,
-//                   gridData: FlGridData(show: false),
-//                   borderData: FlBorderData(show: false),
-//                   titlesData: FlTitlesData(
-//                     leftTitles: AxisTitles(
-//                       sideTitles: SideTitles(showTitles: false),
-//                     ),
-//                     rightTitles: AxisTitles(
-//                       sideTitles: SideTitles(showTitles: false),
-//                     ),
-//                     topTitles: AxisTitles(
-//                       sideTitles: SideTitles(showTitles: false),
-//                     ),
-//                     bottomTitles: AxisTitles(
-//                       sideTitles: SideTitles(showTitles: false),
-//                     ),
-//                   ),
-//                   lineTouchData: LineTouchData(enabled: false),
-//                   lineBarsData: [
-//                     LineChartBarData(
-//                       spots: stock.sparkData
-//                           .asMap()
-//                           .entries
-//                           .map((e) => FlSpot(e.key.toDouble(), e.value))
-//                           .toList(),
-//                       isCurved: true,
-//                       color: stock.sparkColor,
-//                       barWidth: 2,
-//                       isStrokeCapRound: true,
-//                       dotData: FlDotData(show: false),
-//                       belowBarData: BarAreaData(show: false),
-//                     ),
-//                   ],
-//                 ),
-//               ),
-//             ),
-//           ),
-
-//           const SizedBox(width: 10),
-
-//           // Price + Change
-//           Column(
-//             crossAxisAlignment: CrossAxisAlignment.end,
-//             children: [
-//               Text(
-//                 stock.price,
-//                 style: TextStyle(
-//                   fontWeight: FontWeight.bold,
-//                   fontSize: 14,
-//                   color: textColor,
-//                 ),
-//               ),
-//               const SizedBox(height: 2),
-//               Text(
-//                 stock.change,
-//                 style: TextStyle(
-//                   fontSize: 12,
-//                   fontWeight: FontWeight.w600,
-//                   color: stock.isPositive ? Colors.green : Colors.red,
-//                 ),
-//               ),
-//             ],
-//           ),
-//         ],
-//       ),
-//     );
-//   }
-// }
-
-// // ─────────────────────────────────────────────
-// // Data model
-// // ─────────────────────────────────────────────
-// class _StockItem {
-//   final String symbol;
-//   final String name;
-//   final String price;
-//   final String change;
-//   final bool isPositive;
-//   final Color dotColor;
-//   final Color iconBg;
-//   final String iconLabel;
-//   final Widget? iconWidget;
-//   final List<double> sparkData;
-//   final Color sparkColor;
-
-//   const _StockItem({
-//     required this.symbol,
-//     required this.name,
-//     required this.price,
-//     required this.change,
-//     required this.isPositive,
-//     required this.dotColor,
-//     required this.iconBg,
-//     required this.iconLabel,
-//     required this.iconWidget,
-//     required this.sparkData,
-//     required this.sparkColor,
-//   });
-// }
-// import 'dart:math';
-
-// import 'package:flutter/material.dart';
-// import 'package:fl_chart/fl_chart.dart';
-// import 'package:hybstockadvisor/widgets/bottomNavBar.dart';
-// import 'package:hybstockadvisor/services/api_service.dart';
-
-// // Your static metadata map (copied from dashboard so we can get company names)
-// const Map<String, Map<String, String>> stockMetadata = {
-//   'AIRTELAFRI': {'name': 'Airtel Africa Plc'},
-//   'MTNN': {'name': 'MTN Nigeria Communications PLC'},
-//   'BUAFOODS': {'name': 'BUA Foods PLC'},
-//   'DANGCEM': {'name': 'Dangote Cement Plc'},
-//   'BUACEMENT': {'name': 'BUA Cement Plc'},
-//   'ARADEL': {'name': 'Aradel Holdings Plc'},
-//   'SEPLAT': {'name': 'Seplat Energy Plc'},
-//   'GTCO': {'name': 'Guaranty Trust Holding Company Plc'},
-//   'ZENITHBANK': {'name': 'Zenith Bank Plc'},
-//   'WAPCO': {'name': 'Lafarge Africa Plc'},
-//   'PRESCO': {'name': 'Presco Plc'},
-//   'INTBREW': {'name': 'International Breweries Plc'},
-//   'NB': {'name': 'Nigerian Breweries Plc'},
-//   'NESTLE': {'name': 'Nestlé Nigeria Plc'},
-//   'FIRSTHOLDCO': {'name': 'First HoldCo Plc'},
-//   'TRANSPOWER': {'name': 'Transcorp Power Plc'},
-//   'UBA': {'name': 'United Bank for Africa Plc'},
-//   'STANBIC': {'name': 'Stanbic IBTC Holdings PLC'},
-//   'TRANSCOHOT': {'name': 'Transcorp Hotels Plc'},
-//   'OKOMUOIL': {'name': 'The Okomu Oil Palm Company Plc'},
-//   'ACCESSCORP': {'name': 'Access Holdings Plc'},
-//   'WEMABANK': {'name': 'Wema Bank PLC'},
-//   'DANGSUGAR': {'name': 'Dangote Sugar Refinery Plc'},
-//   'GUINNESS': {'name': 'Guinness Nigeria Plc'},
-//   'FCMB': {'name': 'FCMB Group Plc'},
-//   'NAHCO': {'name': 'Nigerian Aviation Handling Company Plc'},
-//   'OANDO': {'name': 'Oando PLC'},
-//   'UNILEVER': {'name': 'Unilever Nigeria Plc'},
-// };
-
-// class Portfolio extends StatefulWidget {
-//   const Portfolio({super.key});
-
-//   @override
-//   State<Portfolio> createState() => _PortfolioState();
-// }
-
-// class _PortfolioState extends State<Portfolio> {
-//   bool _isLoading = true;
-//   List<_StockItem> _portfolioStocks = [];
-//   List<_StockItem> _watchlistStocks = [];
-
-//   @override
-//   void initState() {
-//     super.initState();
-//     _fetchUserAssets();
-//   }
-
-//   Future<void> _fetchUserAssets() async {
-//     setState(() => _isLoading = true);
-
-//     final data = await ApiService.getUserAssets();
-
-//     if (data != null) {
-//       List<_StockItem> parsedPortfolio = [];
-//       List<_StockItem> parsedWatchlist = [];
-
-//       // Parse Portfolio
-//       for (var item in data['portfolio']) {
-//         parsedPortfolio.add(_buildUIStockItem(item));
-//       }
-
-//       // Parse Watchlist
-//       for (var item in data['watchlist']) {
-//         parsedWatchlist.add(_buildUIStockItem(item));
-//       }
-
-//       setState(() {
-//         _portfolioStocks = parsedPortfolio;
-//         _watchlistStocks = parsedWatchlist;
-//         _isLoading = false;
-//       });
-//     } else {
-//       setState(() => _isLoading = false);
-//     }
-//   }
-
-//   // Helper function to map API Data to your beautiful UI layout
-//   _StockItem _buildUIStockItem(dynamic item) {
-//     String symbol = item['ticker'];
-//     String name = stockMetadata[symbol]?['name'] ?? '$symbol Plc';
-//     double price = (item['live_price'] as num).toDouble();
-//     double changePct = (item['change_pct'] as num).toDouble();
-
-//     // Parse the Sparkline data sent by Python
-//     List<dynamic> rawSpark = item['spark_data'] ?? [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
-//     List<double> spark = rawSpark.map((e) => (e as num).toDouble()).toList();
-
-//     bool isPositive = changePct >= 0;
-//     String changeStr = changePct == 0.0 ? "-" : "${isPositive ? '+' : ''}${changePct.toStringAsFixed(2)}%";
-
-//     return _StockItem(
-//       symbol: symbol,
-//       name: name,
-//       price: '₦${price.toStringAsFixed(2)}',
-//       change: changeStr,
-//       isPositive: isPositive,
-//       dotColor: isPositive ? Colors.green : Colors.red,
-//       iconBg: const Color(0xFF1C1C1E), // Default dark icon bg
-//       iconLabel: symbol.substring(0, min(2, symbol.length)),
-//       iconWidget: null,
-//       sparkData: spark,
-//       sparkColor: isPositive ? Colors.green : Colors.red,
-//     );
-//   }
-
-//   // ── The Bottom Sheet for the '+' Icon ──
-//   void _showAddActionSheet(bool isDark) {
-//     showModalBottomSheet(
-//       context: context,
-//       backgroundColor: Colors.transparent,
-//       builder: (context) => Container(
-//         padding: const EdgeInsets.all(24),
-//         decoration: BoxDecoration(
-//           color: isDark ? const Color(0xFF2A2D3E) : Colors.white,
-//           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-//         ),
-//         child: Column(
-//           mainAxisSize: MainAxisSize.min,
-//           crossAxisAlignment: CrossAxisAlignment.start,
-//           children: [
-//             Text(
-//               'Add New Asset',
-//               style: TextStyle(
-//                 fontSize: 20,
-//                 fontWeight: FontWeight.bold,
-//                 color: isDark ? Colors.white : const Color(0xFF1A1A2E),
-//               ),
-//             ),
-//             const SizedBox(height: 20),
-//             ListTile(
-//               leading: Container(
-//                 padding: const EdgeInsets.all(10),
-//                 decoration: BoxDecoration(
-//                   color: const Color(0xFF2979FF).withOpacity(0.1),
-//                   shape: BoxShape.circle,
-//                 ),
-//                 child: const Icon(Icons.pie_chart, color: Color(0xFF2979FF)),
-//               ),
-//               title: const Text('Add to Portfolio', style: TextStyle(fontWeight: FontWeight.w600)),
-//               subtitle: const Text('Track stocks you currently own', style: TextStyle(fontSize: 12)),
-//               onTap: () {
-//                 Navigator.pop(context);
-//                 // TODO: Open your Stock Picker Modal here, then call ApiService.addToPortfolio
-//               },
-//             ),
-//             const Divider(),
-//             ListTile(
-//               leading: Container(
-//                 padding: const EdgeInsets.all(10),
-//                 decoration: BoxDecoration(
-//                   color: Colors.orange.withOpacity(0.1),
-//                   shape: BoxShape.circle,
-//                 ),
-//                 child: const Icon(Icons.visibility, color: Colors.orange),
-//               ),
-//               title: const Text('Add to Watchlist', style: TextStyle(fontWeight: FontWeight.w600)),
-//               subtitle: const Text('Monitor stocks without buying', style: TextStyle(fontSize: 12)),
-//               onTap: () {
-//                 Navigator.pop(context);
-//                 // TODO: Open your Stock Picker Modal here, then call ApiService.addToWatchlist
-//               },
-//             ),
-//             const SizedBox(height: 20),
-//           ],
-//         ),
-//       ),
-//     );
-//   }
-
-//   @override
-//   Widget build(BuildContext context) {
-//     final isDark = Theme.of(context).brightness == Brightness.dark;
-//     final bgColor = isDark ? const Color(0xFF1A1A2E) : const Color(0xFFF2F4F7);
-//     final cardColor = isDark ? const Color(0xFF2A2D3E) : Colors.white;
-//     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
-
-//     return Scaffold(
-//       backgroundColor: bgColor,
-//       bottomNavigationBar: const BottomNavBar(currentIndex: 2),
-//       body: SafeArea(
-//         child: _isLoading
-//         ? const Center(child: CircularProgressIndicator(color: Color(0xFF2979FF)))
-//         : CustomScrollView(
-//           slivers: [
-//             // ── Header ──
-//             SliverToBoxAdapter(
-//               child: Padding(
-//                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-//                 child: Row(
-//                   crossAxisAlignment: CrossAxisAlignment.start,
-//                   children: [
-//                     Column(
-//                       crossAxisAlignment: CrossAxisAlignment.start,
-//                       children: [
-//                         Text(
-//                           'Portfolio',
-//                           style: TextStyle(
-//                             fontSize: 26,
-//                             fontWeight: FontWeight.bold,
-//                             color: textColor,
-//                           ),
-//                         ),
-//                         const Text(
-//                           'HybStockAdvisor',
-//                           style: TextStyle(
-//                             fontSize: 13,
-//                             color: Color(0xFF2979FF),
-//                             fontWeight: FontWeight.w500,
-//                           ),
-//                         ),
-//                       ],
-//                     ),
-//                     const Spacer(),
-//                     GestureDetector(
-//                       onTap: () => _showAddActionSheet(isDark),
-//                       child: Container(
-//                         width: 40,
-//                         height: 40,
-//                         decoration: BoxDecoration(
-//                           color: cardColor,
-//                           shape: BoxShape.circle,
-//                           boxShadow: [
-//                             BoxShadow(
-//                               color: Colors.black.withOpacity(0.07),
-//                               blurRadius: 6,
-//                               offset: const Offset(0, 2),
-//                             ),
-//                           ],
-//                         ),
-//                         child: const Icon(
-//                           Icons.add,
-//                           color: Color(0xFF2979FF),
-//                           size: 22,
-//                         ),
-//                       ),
-//                     ),
-//                   ],
-//                 ),
-//               ),
-//             ),
-
-//             // ── Search Bar ──
-//             SliverToBoxAdapter(
-//               child: Padding(
-//                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-//                 child: Container(
-//                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-//                   decoration: BoxDecoration(
-//                     color: cardColor,
-//                     borderRadius: BorderRadius.circular(14),
-//                     boxShadow: [
-//                       BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 6, offset: const Offset(0, 2)),
-//                     ],
-//                   ),
-//                   child: Row(
-//                     children: [
-//                       Icon(Icons.search, color: Colors.grey[400], size: 20),
-//                       const SizedBox(width: 10),
-//                       Text(
-//                         'Search symbol, company...',
-//                         style: TextStyle(color: Colors.grey[400], fontSize: 14),
-//                       ),
-//                     ],
-//                   ),
-//                 ),
-//               ),
-//             ),
-
-//             const SliverToBoxAdapter(child: SizedBox(height: 12)),
-
-//             // ── Your Stocks Header ──
-//             SliverToBoxAdapter(
-//               child: Padding(
-//                 padding: const EdgeInsets.symmetric(horizontal: 20),
-//                 child: Row(
-//                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-//                   children: [
-//                     Text('Your Stocks', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor)),
-//                     const Text('Sort by', style: TextStyle(fontSize: 13, color: Color(0xFF2979FF), fontWeight: FontWeight.w500)),
-//                   ],
-//                 ),
-//               ),
-//             ),
-
-//             const SliverToBoxAdapter(child: SizedBox(height: 12)),
-
-//             // ── Stock List (Portfolio) ──
-//             if (_portfolioStocks.isEmpty)
-//                SliverToBoxAdapter(
-//                 child: Padding(
-//                   padding: const EdgeInsets.all(20.0),
-//                   child: Center(
-//                     child: Text("No stocks in portfolio.", style: TextStyle(color: Colors.grey[500])),
-//                   ),
-//                 ),
-//               )
-//             else
-//               SliverList(
-//                 delegate: SliverChildBuilderDelegate((context, index) {
-//                   final stock = _portfolioStocks[index];
-//                   return Padding(
-//                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-//                     child: _StockCard(stock: stock, isDark: isDark, cardColor: cardColor, textColor: textColor),
-//                   );
-//                 }, childCount: _portfolioStocks.length),
-//               ),
-
-//             const SliverToBoxAdapter(child: SizedBox(height: 24)),
-
-//             // ── Your Watchlist Header ──
-//             SliverToBoxAdapter(
-//               child: Padding(
-//                 padding: const EdgeInsets.symmetric(horizontal: 20),
-//                 child: Row(
-//                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-//                   children: [
-//                     Text('Your Watchlist', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor)),
-//                     const Text('Sort by', style: TextStyle(fontSize: 13, color: Color(0xFF2979FF), fontWeight: FontWeight.w500)),
-//                   ],
-//                 ),
-//               ),
-//             ),
-
-//             const SliverToBoxAdapter(child: SizedBox(height: 12)),
-
-//             // ── Watch List ──
-//             if (_watchlistStocks.isEmpty)
-//                SliverToBoxAdapter(
-//                 child: Padding(
-//                   padding: const EdgeInsets.all(20.0),
-//                   child: Center(
-//                     child: Text("Watchlist is empty.", style: TextStyle(color: Colors.grey[500])),
-//                   ),
-//                 ),
-//               )
-//             else
-//               SliverList(
-//                 delegate: SliverChildBuilderDelegate((context, index) {
-//                   final stock = _watchlistStocks[index];
-//                   return Padding(
-//                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-//                     child: _StockCard(stock: stock, isDark: isDark, cardColor: cardColor, textColor: textColor),
-//                   );
-//                 }, childCount: _watchlistStocks.length),
-//               ),
-
-//             const SliverToBoxAdapter(child: SizedBox(height: 12)),
-//           ],
-//         ),
-//       ),
-//     );
-//   }
-// }
-
-// // ─────────────────────────────────────────────
-// // Stock Card
-// // ─────────────────────────────────────────────
-// class _StockCard extends StatelessWidget {
-//   final _StockItem stock;
-//   final bool isDark;
-//   final Color cardColor;
-//   final Color textColor;
-
-//   const _StockCard({
-//     required this.stock,
-//     required this.isDark,
-//     required this.cardColor,
-//     required this.textColor,
-//   });
-
-//   @override
-//   Widget build(BuildContext context) {
-
-//     // Dynamic chart scaling
-//     double maxPrice = stock.sparkData.isNotEmpty ? stock.sparkData.reduce((curr, next) => curr > next ? curr : next) : 100;
-//     double minPrice = stock.sparkData.isNotEmpty ? stock.sparkData.reduce((curr, next) => curr < next ? curr : next) : 0;
-//     if (maxPrice == minPrice) {
-//       maxPrice = maxPrice * 1.05;
-//       minPrice = minPrice * 0.95;
-//     }
-//     double padding = (maxPrice - minPrice) * 0.2;
-
-//     return Container(
-//       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-//       decoration: BoxDecoration(
-//         color: cardColor,
-//         borderRadius: BorderRadius.circular(16),
-//         boxShadow: [
-//           BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 6, offset: const Offset(0, 2)),
-//         ],
-//       ),
-//       child: Row(
-//         children: [
-//           // Icon
-//           Container(
-//             width: 44,
-//             height: 44,
-//             decoration: BoxDecoration(
-//               color: stock.iconBg,
-//               borderRadius: BorderRadius.circular(10),
-//             ),
-//             child: stock.iconWidget != null
-//                 ? Center(child: stock.iconWidget)
-//                 : Center(
-//                     child: Text(
-//                       stock.iconLabel,
-//                       style: TextStyle(
-//                         fontWeight: FontWeight.bold,
-//                         fontSize: stock.iconLabel.length > 1 ? 13 : 16,
-//                         color: Colors.white,
-//                       ),
-//                     ),
-//                   ),
-//           ),
-
-//           const SizedBox(width: 12),
-
-//           // Symbol + Name + dot
-//           Expanded( // Added Expanded so long company names don't overflow
-//             flex: 2,
-//             child: Column(
-//               crossAxisAlignment: CrossAxisAlignment.start,
-//               children: [
-//                 Row(
-//                   children: [
-//                     Text(
-//                       stock.symbol,
-//                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: textColor),
-//                     ),
-//                     const SizedBox(width: 6),
-//                     Container(width: 7, height: 7, decoration: BoxDecoration(color: stock.dotColor, shape: BoxShape.circle)),
-//                   ],
-//                 ),
-//                 const SizedBox(height: 2),
-//                 Text(stock.name, style: TextStyle(fontSize: 12, color: Colors.grey[500]), overflow: TextOverflow.ellipsis),
-//               ],
-//             ),
-//           ),
-
-//           const SizedBox(width: 10),
-
-//           // Sparkline
-//           Expanded(
-//             flex: 2,
-//             child: SizedBox(
-//               height: 40,
-//               child: LineChart(
-//                 LineChartData(
-//                   minX: 0,
-//                   maxX: 6,
-//                   minY: minPrice - padding,
-//                   maxY: maxPrice + padding,
-//                   gridData: FlGridData(show: false),
-//                   borderData: FlBorderData(show: false),
-//                   titlesData: FlTitlesData(
-//                     leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-//                     rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-//                     topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-//                     bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-//                   ),
-//                   lineTouchData: LineTouchData(enabled: false),
-//                   lineBarsData: [
-//                     LineChartBarData(
-//                       spots: stock.sparkData.asMap().entries.map((e) => FlSpot(e.key.toDouble(), e.value)).toList(),
-//                       isCurved: true,
-//                       color: stock.sparkColor,
-//                       barWidth: 2,
-//                       isStrokeCapRound: true,
-//                       dotData: FlDotData(show: false),
-//                       belowBarData: BarAreaData(show: false),
-//                     ),
-//                   ],
-//                 ),
-//               ),
-//             ),
-//           ),
-
-//           const SizedBox(width: 10),
-
-//           // Price + Change
-//           Column(
-//             crossAxisAlignment: CrossAxisAlignment.end,
-//             children: [
-//               Text(
-//                 stock.price,
-//                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: textColor),
-//               ),
-//               const SizedBox(height: 2),
-//               Text(
-//                 stock.change,
-//                 style: TextStyle(
-//                   fontSize: 12,
-//                   fontWeight: FontWeight.w600,
-//                   color: stock.isPositive ? Colors.green : Colors.red,
-//                 ),
-//               ),
-//             ],
-//           ),
-//         ],
-//       ),
-//     );
-//   }
-// }
-
-// // ─────────────────────────────────────────────
-// // Data model
-// // ─────────────────────────────────────────────
-// class _StockItem {
-//   final String symbol;
-//   final String name;
-//   final String price;
-//   final String change;
-//   final bool isPositive;
-//   final Color dotColor;
-//   final Color iconBg;
-//   final String iconLabel;
-//   final Widget? iconWidget;
-//   final List<double> sparkData;
-//   final Color sparkColor;
-
-//   const _StockItem({
-//     required this.symbol,
-//     required this.name,
-//     required this.price,
-//     required this.change,
-//     required this.isPositive,
-//     required this.dotColor,
-//     required this.iconBg,
-//     required this.iconLabel,
-//     required this.iconWidget,
-//     required this.sparkData,
-//     required this.sparkColor,
-//   });
-// }
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:hive/hive.dart';
@@ -1335,6 +29,7 @@ class _PortfolioState extends State<Portfolio>
     with SingleTickerProviderStateMixin {
   bool _isLoading = true;
   bool _isRefreshing = false;
+  bool _hasError = false;
   List<_StockItem> _portfolioStocks = [];
   List<_StockItem> _watchlistStocks = [];
   List<NigerianStock> _availableMarketStocks = [];
@@ -1406,6 +101,7 @@ class _PortfolioState extends State<Portfolio>
         _watchlistStocks = watchlistItems;
         _isLoading = false;
         _isRefreshing = false;
+        _hasError = false;
       });
 
       // Fire price movement notifications for portfolio stocks with ≥3% change
@@ -1417,6 +113,7 @@ class _PortfolioState extends State<Portfolio>
         setState(() {
           _isLoading = false;
           _isRefreshing = false;
+          _hasError = true;
         });
     }
   }
@@ -1734,6 +431,7 @@ class _PortfolioState extends State<Portfolio>
             // Add to Watchlist Directly
             setState(() => _isRefreshing = true);
             final res = await ApiService.addToWatchlist(ticker: stock.symbol);
+            if (!mounted) return;
             if (res['status'] == 'success') {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -1846,6 +544,7 @@ class _PortfolioState extends State<Portfolio>
                 avgBuyPrice: price,
               );
 
+              if (!mounted) return;
               if (res['status'] == 'success') {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -1871,6 +570,54 @@ class _PortfolioState extends State<Portfolio>
     );
   }
 
+  Widget _buildNetworkError(Color textColor) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.wifi_off_rounded, size: 56, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            Text(
+              'Could not connect to server',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: textColor,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Check your connection and try again.',
+              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: _fetchInitialData,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0A3D62),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text(
+                'Retry',
+                style: TextStyle(color: Colors.white, fontSize: 15),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -1880,24 +627,40 @@ class _PortfolioState extends State<Portfolio>
 
     return Scaffold(
       backgroundColor: bgColor,
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: const Color(0xFF0A3D62),
-        child: const Icon(Icons.auto_awesome, color: Colors.white),
-        onPressed: () {
-          showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            backgroundColor: Colors.transparent,
-            builder: (context) => AiChatSheet(isDark: isDark),
-          );
-        },
+      floatingActionButton: SizedBox(
+        width: 42,
+        height: 42,
+        child: FloatingActionButton(
+          elevation: 4,
+          highlightElevation: 6,
+          backgroundColor: const Color(0xFF0A3D62),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          onPressed: () {
+            showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (context) => AiChatSheet(isDark: isDark),
+            );
+          },
+          child: const Icon(
+            Icons.smart_toy_outlined,
+            color: Colors.white,
+            size: 22,
+          ),
+        ),
       ),
+
       bottomNavigationBar: const BottomNavBar(currentIndex: 2),
       body: SafeArea(
         child: _isLoading
             ? const Center(
                 child: CircularProgressIndicator(color: Color(0xFF0A3D62)),
               )
+            : _hasError
+            ? _buildNetworkError(textColor)
             : CustomScrollView(
                 slivers: [
                   // ── Header ──
@@ -2010,11 +773,32 @@ class _PortfolioState extends State<Portfolio>
                   else if (_portfolioStocks.isEmpty)
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.all(20.0),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 32,
+                        ),
                         child: Center(
-                          child: Text(
-                            "No stocks in portfolio.",
-                            style: TextStyle(color: Colors.grey[500]),
+                          child: Column(
+                            children: [
+                              Icon(
+                                Icons.bar_chart_outlined,
+                                size: 48,
+                                color: Colors.grey[400],
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'No stocks in portfolio.',
+                                style: TextStyle(color: Colors.grey[500]),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Tap + to add your first stock.',
+                                style: TextStyle(
+                                  color: Colors.grey[400],
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -2176,7 +960,10 @@ class _PortfolioState extends State<Portfolio>
                   else if (_watchlistStocks.isEmpty)
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.all(20.0),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 32,
+                        ),
                         child: Center(
                           child: Column(
                             children: [
@@ -2187,8 +974,16 @@ class _PortfolioState extends State<Portfolio>
                               ),
                               const SizedBox(height: 12),
                               Text(
-                                "Watchlist is empty.",
+                                'Watchlist is empty.',
                                 style: TextStyle(color: Colors.grey[500]),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Tap + to add your first stock.',
+                                style: TextStyle(
+                                  color: Colors.grey[400],
+                                  fontSize: 12,
+                                ),
                               ),
                             ],
                           ),
