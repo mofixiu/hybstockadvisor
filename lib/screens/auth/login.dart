@@ -79,12 +79,11 @@ class _LoginState extends State<Login> {
       String firstName = response['user_data']['first_name'];
       int userId = response['user_data']['id'];
 
-      // 🚨 CRITICAL JWT FIX: Save the token directly to the Hive authBox
+      // Save JWT to encrypted secure storage
+      await ApiService.saveToken(token);
+
+      // Save user_id to Hive (non-sensitive)
       final authBox = await Hive.openBox('auth');
-      await authBox.put(
-        'auth_token',
-        token,
-      ); // ApiService looks for this exact key!
       await authBox.put('user_id', userId);
 
       // Save user data to Hive (For UI display)

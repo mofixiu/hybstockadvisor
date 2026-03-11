@@ -1,7 +1,7 @@
 import 'package:hybstockadvisor/screens/auth/login.dart';
 import 'package:hybstockadvisor/screens/dashboard.dart';
+import 'package:hybstockadvisor/services/api_service.dart';
 import 'package:flutter/material.dart';
-import 'package:hive/hive.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({Key? key}) : super(key: key);
@@ -82,14 +82,23 @@ class _SplashScreenState extends State<SplashScreen>
     // ... inside _startAnimations() ...
 
     if (mounted) {
-      // 🚨 FIX: Open Hive directly and look for 'auth_token'
-      final authBox = await Hive.openBox('auth');
-      final token = authBox.get('auth_token'); // Make sure it matches what login.dart saved!
+      // Read JWT from encrypted secure storage
+      final token = await ApiService.readToken();
+
+      // Check if token exists AND is not expired
+      final isValid = token != null && !ApiService.isTokenExpired(token);
+
+      // If token is expired, clear stale data
+      if (token != null && !isValid) {
+        await ApiService.clearUserData();
+      }
+
+      if (!mounted) return;
 
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
           pageBuilder: (context, animation, secondaryAnimation) =>
-              token != null ? const Dashboard() : const Login(),
+              isValid ? const Dashboard() : const Login(),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             return FadeTransition(opacity: animation, child: child);
           },
