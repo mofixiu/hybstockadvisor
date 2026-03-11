@@ -19,7 +19,7 @@ class _AiChatSheetState extends State<AiChatSheet> {
     {
       'role': 'ai',
       'text':
-          'Hello! I am your HybStockAdvisor AI. Ask me about any Nigerian stock, market trends, or why a specific recommendation was made!',
+          'Hello! I am your Lexi - Your AI stock advisor. Ask me about any Nigerian stock, market trends, or why a specific recommendation was made!',
     },
   ];
 
@@ -215,7 +215,7 @@ class _AiChatSheetState extends State<AiChatSheet> {
                           ..add({
                             'role': 'ai',
                             'text':
-                                'Hello! I am your HybStockAdvisor AI. Ask me about any Nigerian stock, market trends, or why a specific recommendation was made!',
+                                'Hello! I am your Lexi - Your AI stock advisor. Ask me about any Nigerian stock, market trends, or why a specific recommendation was made!',
                           })
                           ..addAll(_savedMessages);
                       });
