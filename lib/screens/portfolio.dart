@@ -1,3 +1,5 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:hive/hive.dart';
@@ -12,6 +14,7 @@ import 'package:hybstockadvisor/models/app_notification.dart';
 import 'package:hybstockadvisor/providers/notification_provider.dart';
 // We import Dashboard to access NigerianStock model and default lists
 import 'package:hybstockadvisor/screens/dashboard.dart';
+import 'package:hybstockadvisor/widgets/stock_logo.dart';
 
 // ─────────────────────────────────────────────
 // Sort Options
@@ -66,13 +69,11 @@ class _PortfolioState extends State<Portfolio>
         String sym = item['symbol'];
         return NigerianStock(
           symbol: sym,
-          name: '$sym Plc', // Fallback name
-          marketCap: '--',
+          name: item['name'] ?? '$sym Plc',
+          marketCap: item['market_cap'] ?? '--',
           price: (item['price'] as num).toDouble(),
           change:
-              ((item['change_pct'] as num).toDouble() >= 0 ? '+' : '') +
-              (item['change_pct'] as num).toDouble().toStringAsFixed(2) +
-              '%',
+              '${(item['change_pct'] as num).toDouble() >= 0 ? '+' : ''}${(item['change_pct'] as num).toDouble().toStringAsFixed(2)}%',
         );
       }).toList();
     } else {
@@ -109,12 +110,13 @@ class _PortfolioState extends State<Portfolio>
         _firePortfolioNotifications(portfolioItems, data['portfolio'] as List);
       }
     } else {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isLoading = false;
           _isRefreshing = false;
           _hasError = true;
         });
+      }
     }
   }
 
@@ -179,6 +181,7 @@ class _PortfolioState extends State<Portfolio>
           title: 'Portfolio Price Alert',
           body: '$ticker moved $changeStr today',
           type: NotificationType.priceMovement,
+          ticker: ticker,
         );
       }
     }
@@ -1634,24 +1637,7 @@ class _StockCard extends StatelessWidget {
         child: Row(
           children: [
             // Icon
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: stock.iconBg,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Center(
-                child: Text(
-                  stock.iconLabel,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
+            StockLogo(symbol: stock.symbol),
             const SizedBox(width: 12),
 
             // Symbol + Auto-Scrolling Name
@@ -1901,27 +1887,7 @@ class _StockPickerModalState extends State<_StockPickerModal> {
                         ),
                         child: Row(
                           children: [
-                            Container(
-                              width: 44,
-                              height: 44,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF2979FF).withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  stock.symbol.substring(
-                                    0,
-                                    min(3, stock.symbol.length),
-                                  ),
-                                  style: const TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFF0A3D62),
-                                  ),
-                                ),
-                              ),
-                            ),
+                            StockLogo(symbol: stock.symbol),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(

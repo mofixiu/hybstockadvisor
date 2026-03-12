@@ -11,6 +11,7 @@ class AppNotification {
   final String title;
   final String body;
   final NotificationType type;
+  final String? ticker;
   final DateTime timestamp;
   bool isRead;
 
@@ -19,6 +20,7 @@ class AppNotification {
     required this.title,
     required this.body,
     required this.type,
+    this.ticker,
     required this.timestamp,
     this.isRead = false,
   });
@@ -29,6 +31,7 @@ class AppNotification {
       'title': title,
       'body': body,
       'type': type.index,
+      'ticker': ticker,
       'timestamp': timestamp.millisecondsSinceEpoch,
       'isRead': isRead,
     };
@@ -40,6 +43,7 @@ class AppNotification {
       title: map['title'] as String,
       body: map['body'] as String,
       type: NotificationType.values[map['type'] as int],
+      ticker: map['ticker'] as String?,
       timestamp: DateTime.fromMillisecondsSinceEpoch(map['timestamp'] as int),
       isRead: map['isRead'] as bool,
     );

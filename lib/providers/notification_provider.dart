@@ -26,29 +26,34 @@ class NotificationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Add a notification. Deduplicates by type per calendar day — one
-  /// notification of each type is allowed per day.
+  /// Add a notification. Deduplicates by type + ticker per calendar day.
+  /// If [ticker] is provided, one notification per type per ticker per day.
+  /// If [ticker] is null, one notification per type per day (global).
   Future<void> addNotification({
     required String title,
     required String body,
     required NotificationType type,
+    String? ticker,
   }) async {
     final now = DateTime.now();
     final todayStart = DateTime(now.year, now.month, now.day);
 
-    // Check for duplicate (same type on same day)
+    // Deduplicate: same type + same ticker (or both null) on same day
     final duplicate = _notifications.any(
       (n) =>
           n.type == type &&
+          n.ticker == ticker &&
           n.timestamp.isAfter(todayStart),
     );
     if (duplicate) return;
 
+    final tickerTag = ticker ?? 'global';
     final notification = AppNotification(
-      id: '${type.index}_${now.millisecondsSinceEpoch}',
+      id: '${type.index}_${tickerTag}_${now.millisecondsSinceEpoch}',
       title: title,
       body: body,
       type: type,
+      ticker: ticker,
       timestamp: now,
     );
 

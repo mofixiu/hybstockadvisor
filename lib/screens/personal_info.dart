@@ -190,7 +190,6 @@ class _PersonalInfoState extends State<PersonalInfo> {
     // (returned when the box is already open) completes synchronously.
     await Future.delayed(Duration.zero);
 
-    // TODO: Add ApiService.updateProfile(firstName, lastName) when backend endpoint is ready
     final box = await Hive.openBox('user');
     await box.put('first_name', firstName);
     await box.put('last_name', lastName);

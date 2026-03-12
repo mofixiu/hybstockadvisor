@@ -19,6 +19,10 @@ class Profile extends StatefulWidget {
 class _ProfileState extends State<Profile> {
   String _fullName = 'Loading...';
   String? _avatarPath;
+  String _investorTier = 'Investor';
+  IconData _tierIcon = Icons.person_outline;
+  Color _tierColor = const Color(0xFF888888);
+  Color _tierBgColor = const Color(0xFFE8E8E8);
 
   @override
   void initState() {
@@ -31,10 +35,45 @@ class _ProfileState extends State<Profile> {
     final firstName = box.get('first_name', defaultValue: '');
     final lastName = box.get('last_name', defaultValue: '');
     final name = '$firstName $lastName'.trim();
+   
+
+    // Fetch portfolio to determine investor tier
+    String tier = 'Beginner Investor';
+    IconData icon = Icons.person_outline;
+    Color color = const Color(0xFF888888);
+    Color bgColor = const Color(0xFFE8E8E8);
+
+    try {
+      final data = await ApiService.getUserAssets();
+      if (data != null) {
+        final portfolioCount = (data['portfolio'] as List?)?.length ?? 0;
+        if (portfolioCount >= 5) {
+          tier = 'Premium Investor';
+          icon = Icons.verified;
+          color = const Color(0xFF0A3D62);
+          bgColor = const Color(0xFFEAF1FF);
+        } else if (portfolioCount >= 3) {
+          tier = 'Committed Investor';
+          icon = Icons.trending_up;
+          color = const Color(0xFF2DBD6E);
+          bgColor = const Color(0xFFD6F5E3);
+        } else if (portfolioCount >= 1) {
+          tier = 'Active Investor';
+          icon = Icons.show_chart;
+          color = const Color(0xFF2979FF);
+          bgColor = const Color(0xFFDCEAFF);
+        }
+      }
+    } catch (_) {}
+
     if (mounted) {
       setState(() {
         if (name.isNotEmpty) _fullName = name;
         _avatarPath = box.get('avatar_path');
+        _investorTier = tier;
+        _tierIcon = icon;
+        _tierColor = color;
+        _tierBgColor = bgColor;
       });
     }
   }
@@ -160,7 +199,7 @@ class _ProfileState extends State<Profile> {
 
                     const SizedBox(height: 8),
 
-                    // ── Premium Badge ──
+                    // ── Investor Badge (dynamic) ──
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 14,
@@ -168,23 +207,19 @@ class _ProfileState extends State<Profile> {
                       ),
                       decoration: BoxDecoration(
                         color: isDark
-                            ? const Color(0xFF1E2A4A)
-                            : const Color(0xFFEAF1FF),
+                            ? _tierColor.withOpacity(0.15)
+                            : _tierBgColor,
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          Icon(
-                            Icons.verified,
-                            color: Color(0xFF0A3D62),
-                            size: 16,
-                          ),
-                          SizedBox(width: 6),
+                        children: [
+                          Icon(_tierIcon, color: _tierColor, size: 16),
+                          const SizedBox(width: 6),
                           Text(
-                            'Premium Investor',
+                            _investorTier,
                             style: TextStyle(
-                              color: Color(0xFF0A3D62),
+                              color: _tierColor,
                               fontWeight: FontWeight.w600,
                               fontSize: 13,
                             ),
@@ -381,8 +416,12 @@ class _ProfileState extends State<Profile> {
 
                             if (!context.mounted) return;
                             // Navigate to Login and CLEAR the entire stack
-                            Navigator.of(context).pushAndRemoveUntil(
-                              MaterialPageRoute(builder: (_) => const Login()),
+                            // Navigator.of(context).pushAndRemoveUntil(
+                            //   MaterialPageRoute(builder: (_) => const Login()),
+                            //   (route) => false,
+                            // );
+                            context.pushFadeAndRemoveUntil(
+                              const Login(),
                               (route) => false,
                             );
                           }

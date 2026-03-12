@@ -1,3 +1,5 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'package:flutter/material.dart';
 import 'package:hybstockadvisor/screens/auth/login.dart';
 // import 'package:hybstockadvisor/screens/dashboard.dart';

@@ -1,3 +1,6 @@
+// ignore_for_file: use_build_context_synchronously
+
+import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:hybstockadvisor/screens/auth/forgotPassword.dart';
@@ -77,6 +80,9 @@ class _LoginState extends State<Login> {
     //   await userBox.put('last_name', response['user_data']['last_name'] ?? '');
 
     if (response['status'] == 'success') {
+      log('🔍 LOGIN user_data keys: ${response['user_data']?.keys.toList()}');
+      log('🔍 LOGIN user_data: ${response['user_data']}');
+
       String token = response['token'];
       String firstName = response['user_data']['first_name'];
       int userId = response['user_data']['id'];

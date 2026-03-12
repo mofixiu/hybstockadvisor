@@ -28,8 +28,12 @@ class _OtpVerificationState extends State<OtpVerification> {
 
   @override
   void dispose() {
-    for (final c in _controllers) c.dispose();
-    for (final f in _focusNodes) f.dispose();
+    for (final c in _controllers) {
+      c.dispose();
+    }
+    for (final f in _focusNodes) {
+      f.dispose();
+    }
     _timer?.cancel();
     super.dispose();
   }
@@ -108,7 +112,9 @@ class _OtpVerificationState extends State<OtpVerification> {
         ),
       );
       // Clear fields on wrong/expired OTP
-      for (final c in _controllers) c.clear();
+      for (final c in _controllers) {
+        c.clear();
+      }
       _focusNodes[0].requestFocus();
     }
   }

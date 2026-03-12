@@ -1,10 +1,11 @@
+import 'package:hive/hive.dart';
 import 'package:hybstockadvisor/screens/auth/login.dart';
 import 'package:hybstockadvisor/screens/dashboard.dart';
 import 'package:hybstockadvisor/services/api_service.dart';
 import 'package:flutter/material.dart';
 
 class SplashScreen extends StatefulWidget {
-  const SplashScreen({Key? key}) : super(key: key);
+  const SplashScreen({super.key});
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -82,15 +83,20 @@ class _SplashScreenState extends State<SplashScreen>
     // ... inside _startAnimations() ...
 
     if (mounted) {
-      // Read JWT from encrypted secure storage
-      final token = await ApiService.readToken();
-
-      // Check if token exists AND is not expired
-      final isValid = token != null && !ApiService.isTokenExpired(token);
-
-      // If token is expired, clear stale data
-      if (token != null && !isValid) {
-        await ApiService.clearUserData();
+      // Check if user has a saved session (token + user_id).
+      // The Dio 401 interceptor handles actual server-side expiry,
+      // so we only need to verify the session artifacts exist.
+      bool isLoggedIn = false;
+      try {
+        final token = await ApiService.readToken();
+        if (token != null && token.isNotEmpty) {
+          final authBox = await Hive.openBox('auth');
+          final userId = authBox.get('user_id');
+          isLoggedIn = userId != null;
+        }
+      } catch (_) {
+        // Secure storage can fail after reinstall on some devices
+        isLoggedIn = false;
       }
 
       if (!mounted) return;
@@ -98,7 +104,7 @@ class _SplashScreenState extends State<SplashScreen>
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
           pageBuilder: (context, animation, secondaryAnimation) =>
-              isValid ? const Dashboard() : const Login(),
+              isLoggedIn ? const Dashboard() : const Login(),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             return FadeTransition(opacity: animation, child: child);
           },
