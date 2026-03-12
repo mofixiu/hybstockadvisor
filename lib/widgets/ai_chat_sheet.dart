@@ -219,7 +219,10 @@ class _AiChatSheetState extends State<AiChatSheet> {
                           })
                           ..addAll(_savedMessages);
                       });
-                      _scrollToBottom();
+                      // Wait for bottom sheet dismiss animation before scrolling
+                      Future.delayed(const Duration(milliseconds: 500), () {
+                        _scrollToBottom();
+                      });
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF0A3D62),
@@ -242,13 +245,19 @@ class _AiChatSheetState extends State<AiChatSheet> {
   }
 
   void _scrollToBottom() {
-    Future.delayed(const Duration(milliseconds: 100), () {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+        // Second pass after layout settles to catch any remaining extent
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (_scrollController.hasClients) {
+            _scrollController.animateTo(
+              _scrollController.position.maxScrollExtent,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+            );
+          }
+        });
       }
     });
   }
