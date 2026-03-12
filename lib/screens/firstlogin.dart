@@ -1,8 +1,11 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:hybstockadvisor/screens/dashboard.dart';
 import 'package:hybstockadvisor/services/api_service.dart';
 import 'package:hybstockadvisor/widgets/custom_page_route.dart';
+import 'package:hybstockadvisor/widgets/stock_logo.dart';
 import 'dart:math';
 
 class FirstLogin extends StatefulWidget {
@@ -41,13 +44,14 @@ class _FirstLoginState extends State<FirstLogin> {
         double price = (item['price'] as num).toDouble();
         double pct = (item['change_pct'] as num).toDouble();
 
-        String name = stockMetadata[sym]?['name'] ?? '$sym Plc';
-        String cap = stockMetadata[sym]?['marketCap'] ?? '--';
+        String name = item['name'] ?? '$sym Plc';
+        String cap = item['market_cap'] ?? '--';
 
         String changeStr = '-';
-        if (pct > 0)
+        if (pct > 0) {
           changeStr = '+${pct.toStringAsFixed(2)}%';
-        else if (pct < 0)
+        } else if (pct < 0)
+          // ignore: curly_braces_in_flow_control_structures
           changeStr = '${pct.toStringAsFixed(2)}%';
 
         liveList.add(
@@ -740,29 +744,7 @@ class _StockPickerModalState extends State<_StockPickerModal> {
                             ),
                             child: Row(
                               children: [
-                                Container(
-                                  width: 44,
-                                  height: 44,
-                                  decoration: BoxDecoration(
-                                    color: const Color(
-                                      0xFF2979FF,
-                                    ).withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      stock.symbol.substring(
-                                        0,
-                                        min(3, stock.symbol.length),
-                                      ),
-                                      style: const TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0xFF0A3D62),
-                                      ),
-                                    ),
-                                  ),
-                                ),
+                                StockLogo(symbol: stock.symbol),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(

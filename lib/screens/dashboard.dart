@@ -13,6 +13,7 @@ import 'package:hybstockadvisor/models/app_notification.dart';
 import 'package:hybstockadvisor/providers/notification_provider.dart';
 import 'package:hybstockadvisor/services/api_service.dart';
 import 'package:hybstockadvisor/widgets/custom_page_route.dart';
+import 'package:hybstockadvisor/widgets/stock_logo.dart';
 
 // ─────────────────────────────────────────────
 // Stock Data Model
@@ -59,41 +60,7 @@ final List<NigerianStock> defaultNigerianStocks = [
 ];
 
 // Dictionary to map API tickers to real company names and market caps
-const Map<String, Map<String, String>> stockMetadata = {
-  'AIRTELAFRI': {'name': 'Airtel Africa Plc', 'marketCap': '23.58T'},
-  'MTNN': {'name': 'MTN Nigeria Communications PLC', 'marketCap': '16.36T'},
-  'BUAFOODS': {'name': 'BUA Foods PLC', 'marketCap': '14.34T'},
-  'DANGCEM': {'name': 'Dangote Cement Plc', 'marketCap': '13.57T'},
-  'BUACEMENT': {'name': 'BUA Cement Plc', 'marketCap': '7.42T'},
-  'ARADEL': {'name': 'Aradel Holdings Plc', 'marketCap': '5.65T'},
-  'SEPLAT': {'name': 'Seplat Energy Plc', 'marketCap': '4.81T'},
-  'GTCO': {'name': 'Guaranty Trust Holding Company Plc', 'marketCap': '4.35T'},
-  'ZENITHBANK': {'name': 'Zenith Bank Plc', 'marketCap': '3.78T'},
-  'WAPCO': {'name': 'Lafarge Africa Plc', 'marketCap': '3.38T'},
-  'PRESCO': {'name': 'Presco Plc', 'marketCap': '2.70T'},
-  'INTBREW': {'name': 'International Breweries Plc', 'marketCap': '2.57T'},
-  'NB': {'name': 'Nigerian Breweries Plc', 'marketCap': '2.49T'},
-  'NESTLE': {'name': 'Nestlé Nigeria Plc', 'marketCap': '2.46T'},
-  'FIRSTHOLDCO': {'name': 'First HoldCo Plc', 'marketCap': '2.36T'},
-  'TRANSPOWER': {'name': 'Transcorp Power Plc', 'marketCap': '2.30T'},
-  'UBA': {'name': 'United Bank for Africa Plc', 'marketCap': '2.10T'},
-  'STANBIC': {'name': 'Stanbic IBTC Holdings PLC', 'marketCap': '2.00T'},
-  'TRANSCOHOT': {'name': 'Transcorp Hotels Plc', 'marketCap': '1.94T'},
-  'OKOMUOIL': {'name': 'The Okomu Oil Palm Company Plc', 'marketCap': '1.68T'},
-  'ACCESSCORP': {'name': 'Access Holdings Plc', 'marketCap': '1.37T'},
-  'WEMABANK': {'name': 'Wema Bank PLC', 'marketCap': '1.12T'},
-  'DANGSUGAR': {'name': 'Dangote Sugar Refinery Plc', 'marketCap': '907.37B'},
-  'GUINNESS': {'name': 'Guinness Nigeria Plc', 'marketCap': '766.63B'},
-  'FCMB': {'name': 'FCMB Group Plc', 'marketCap': '582.08B'},
-  'NAHCO': {
-    'name': 'Nigerian Aviation Handling Company Plc',
-    'marketCap': '331.34B',
-  },
-  'OANDO': {'name': 'Oando PLC', 'marketCap': '729.48B'},
-  'UNILEVER': {'name': 'Unilever Nigeria Plc', 'marketCap': '542.20B'},
-  'GEREGU': {'name': 'Geregu Power Plc', 'marketCap': '2.85T'},
-  'FIDELITYBK': {'name': 'Fidelity Bank Plc', 'marketCap': '1.00T'},
-};
+// stockMetadata removed — name & market_cap now come from the API
 
 class Dashboard extends StatefulWidget {
   const Dashboard({super.key});
@@ -150,13 +117,14 @@ class _DashboardState extends State<Dashboard>
         double price = (item['price'] as num).toDouble();
         double pct = (item['change_pct'] as num).toDouble();
 
-        String name = stockMetadata[sym]?['name'] ?? '$sym Plc';
-        String cap = stockMetadata[sym]?['marketCap'] ?? '--';
+        String name = item['name'] ?? '$sym Plc';
+        String cap = item['market_cap'] ?? '--';
 
         String changeStr = '-';
-        if (pct > 0)
+        if (pct > 0) {
           changeStr = '+${pct.toStringAsFixed(2)}%';
-        else if (pct < 0)
+        } else if (pct < 0)
+          // ignore: curly_braces_in_flow_control_structures
           changeStr = '${pct.toStringAsFixed(2)}%';
 
         liveList.add(
@@ -182,6 +150,11 @@ class _DashboardState extends State<Dashboard>
 
     // 2. Fetch the AI Insights for the selected stock
     _fetchAIInsights(_selectedStock.symbol);
+
+    // 3. Fire notifications once per dashboard load (dedup prevents repeats)
+    _firePortfolioNotifications();
+    _fireStrongBuyNotifications();
+    _checkWeeklySummary();
   }
 
   Future<void> _fetchAIInsights(String ticker) async {
@@ -220,9 +193,10 @@ class _DashboardState extends State<Dashboard>
           double today = prices.last;
           double yesterday = prices[prices.length - 2];
           double pct = ((today - yesterday) / yesterday) * 100;
-          if (pct > 0)
+          if (pct > 0) {
             changeStr = "+${pct.toStringAsFixed(2)}%";
-          else if (pct < 0)
+          } else if (pct < 0)
+            // ignore: curly_braces_in_flow_control_structures
             changeStr = "${pct.toStringAsFixed(2)}%";
         }
 
@@ -249,13 +223,8 @@ class _DashboardState extends State<Dashboard>
           _isLoading = false;
         });
 
-        // Fire in-app notifications based on user preferences
-        if (mounted) {
-          _fireNotifications(
-            (todayData['Safety_Index'] as num).toDouble(),
-            changeStr,
-          );
-        }
+        // Fire in-app notifications for portfolio stocks (not just selected)
+        // Dedup in provider prevents duplicates if called again
       }
     } else {
       setState(() {
@@ -265,45 +234,256 @@ class _DashboardState extends State<Dashboard>
     }
   }
 
-  Future<void> _fireNotifications(double safetyIdx, String changeStr) async {
+  /// Fire AI Forecast, Safety Index, Sell/Strong Sell, and Price Movement
+  /// notifications for stocks the user actually holds in their portfolio.
+  Future<void> _firePortfolioNotifications() async {
     if (!mounted) return;
     final box = await Hive.openBox('user');
     if (!mounted) return;
     final provider = Provider.of<NotificationProvider>(context, listen: false);
 
-    // AI Forecast notification (once per day)
-    if (box.get('notif_ai_forecast', defaultValue: true) == true) {
-      await provider.addNotification(
-        title: 'AI Forecast Updated',
-        body: 'New forecast for ${_selectedStock.symbol}: $_recommendation',
-        type: NotificationType.aiForecast,
-      );
-    }
+    final data = await ApiService.getUserAssets();
+    if (data == null || !mounted) return;
 
-    // Safety Index notification (once per day)
-    if (box.get('notif_safety_index', defaultValue: true) == true) {
-      await provider.addNotification(
-        title: 'Safety Index Update',
-        body:
-            '${_selectedStock.symbol} safety index: ${safetyIdx.toStringAsFixed(1)} — $_recommendation',
-        type: NotificationType.safetyIndex,
-      );
-    }
+    final portfolioItems = data['portfolio'] as List? ?? [];
+    if (portfolioItems.isEmpty) return;
 
-    // Price movement notification (only if ≥ 3% change)
-    if (box.get('notif_price_movement', defaultValue: true) == true) {
-      double pct = 0.0;
-      try {
-        pct = double.parse(changeStr.replaceAll('%', '').replaceAll('+', ''));
-      } catch (_) {}
-      if (pct.abs() >= 3.0) {
+    final bool notifForecast =
+        box.get('notif_ai_forecast', defaultValue: true) == true;
+    final bool notifSafety =
+        box.get('notif_safety_index', defaultValue: true) == true;
+    final bool notifPrice =
+        box.get('notif_price_movement', defaultValue: true) == true;
+
+    // Fetch forecasts for all portfolio stocks in parallel
+    final tickers = portfolioItems.map((e) => e['ticker'] as String).toList();
+    final forecasts = await Future.wait(
+      tickers.map((t) => ApiService.getStockForecast(t)),
+    );
+    if (!mounted) return;
+
+    for (int i = 0; i < tickers.length; i++) {
+      final ticker = tickers[i];
+      final response = forecasts[i];
+      if (response == null || response['status'] != 'success') continue;
+
+      final List<dynamic> history = response['data'];
+      if (history.isEmpty) continue;
+
+      final todayData = history.last;
+      final double safetyIdx = (todayData['Safety_Index'] as num).toDouble();
+      final String recommendation = todayData['Recommendation']
+          .toString()
+          .replaceAll(RegExp(r'[^\w\s]'), '')
+          .trim();
+
+      // Price change from last two days
+      String changeStr = '-';
+      if (history.length >= 2) {
+        final today = (history.last['close'] as num).toDouble();
+        final yesterday = (history[history.length - 2]['close'] as num)
+            .toDouble();
+        final pct = ((today - yesterday) / yesterday) * 100;
+        if (pct > 0) {
+          changeStr = '+${pct.toStringAsFixed(2)}%';
+        } else if (pct < 0) {
+          changeStr = '${pct.toStringAsFixed(2)}%';
+        }
+      }
+
+      // Combined AI Forecast + Safety Index notification (once per day per ticker)
+      if (notifForecast || notifSafety) {
         await provider.addNotification(
-          title: 'Price Movement Alert',
-          body: '${_selectedStock.symbol} moved $changeStr today',
-          type: NotificationType.priceMovement,
+          title: 'AI Insight: $ticker',
+          body:
+              '$ticker is rated "$recommendation" with a safety index of ${safetyIdx.toStringAsFixed(1)}',
+          type: NotificationType.aiForecast,
+          ticker: ticker,
         );
       }
+
+      // Sell / Strong Sell alert for portfolio stocks
+      final recLower = recommendation.toLowerCase();
+      if (recLower.contains('sell')) {
+        await provider.addNotification(
+          title: recLower.contains('strong')
+              ? 'Strong Sell Alert'
+              : 'Sell Alert',
+          body:
+              '$ticker is rated "$recommendation". Consider reviewing your position.',
+          type: NotificationType.aiForecast,
+          ticker: '${ticker}_sell',
+        );
+      }
+
+      // Price movement notification (only if ≥ 3% change)
+      if (notifPrice && changeStr != '-') {
+        double pct = 0.0;
+        try {
+          pct = double.parse(changeStr.replaceAll('%', '').replaceAll('+', ''));
+        } catch (_) {}
+        if (pct.abs() >= 3.0) {
+          await provider.addNotification(
+            title: 'Portfolio Price Alert',
+            body: '$ticker moved $changeStr today',
+            type: NotificationType.priceMovement,
+            ticker: ticker,
+          );
+        }
+      }
     }
+  }
+
+  /// Fire Strong Buy notifications for all market stocks (top 3 by safety index).
+  Future<void> _fireStrongBuyNotifications() async {
+    if (!mounted) return;
+    final box = await Hive.openBox('user');
+    if (!mounted) return;
+    if (box.get('notif_ai_forecast', defaultValue: true) != true) return;
+
+    final provider = Provider.of<NotificationProvider>(context, listen: false);
+
+    // Use the already-loaded market stock list
+    final tickers = _searchableStocks.map((s) => s.symbol).toList();
+    if (tickers.isEmpty) return;
+
+    // Fetch forecasts in parallel
+    final forecasts = await Future.wait(
+      tickers.map((t) => ApiService.getStockForecast(t)),
+    );
+    if (!mounted) return;
+
+    // Collect all strong buy candidates with their safety index
+    final List<({String ticker, String recommendation, double safetyIndex})>
+    candidates = [];
+
+    for (int i = 0; i < tickers.length; i++) {
+      final ticker = tickers[i];
+      final response = forecasts[i];
+      if (response == null || response['status'] != 'success') continue;
+
+      final List<dynamic> history = response['data'];
+      if (history.isEmpty) continue;
+
+      final todayData = history.last;
+      final String recommendation = todayData['Recommendation']
+          .toString()
+          .replaceAll(RegExp(r'[^\w\s]'), '')
+          .trim();
+
+      if (recommendation.toLowerCase().contains('strong') &&
+          recommendation.toLowerCase().contains('buy')) {
+        final double safetyIdx = (todayData['Safety_Index'] as num).toDouble();
+        candidates.add((
+          ticker: ticker,
+          recommendation: recommendation,
+          safetyIndex: safetyIdx,
+        ));
+      }
+    }
+
+    // Sort by safety index descending and take top 3
+    candidates.sort((a, b) => b.safetyIndex.compareTo(a.safetyIndex));
+    final topCandidates = candidates.take(3);
+
+    for (final c in topCandidates) {
+      await provider.addNotification(
+        title: 'Strong Buy Alert',
+        body:
+            '${c.ticker} is rated "${c.recommendation}" (Safety: ${c.safetyIndex.toStringAsFixed(1)}). This could be a buying opportunity.',
+        type: NotificationType.aiForecast,
+        ticker: '${c.ticker}_strongbuy',
+      );
+    }
+  }
+
+  /// Generate a weekly summary notification every Friday.
+  Future<void> _checkWeeklySummary() async {
+    if (!mounted) return;
+    final now = DateTime.now();
+    if (now.weekday != DateTime.friday) return;
+
+    final box = await Hive.openBox('user');
+    if (!mounted) return;
+    if (box.get('notif_weekly_summary', defaultValue: false) != true) return;
+
+    final provider = Provider.of<NotificationProvider>(context, listen: false);
+
+    // Fetch portfolio data
+    final data = await ApiService.getUserAssets();
+    if (data == null || !mounted) return;
+
+    final portfolioItems = data['portfolio'] as List? ?? [];
+
+    // Build portfolio summary
+    String portfolioSummary;
+    if (portfolioItems.isEmpty) {
+      portfolioSummary =
+          'Your portfolio is empty. Add stocks to get weekly recaps.';
+    } else {
+      double totalChange = 0;
+      String topGainer = '';
+      double topGain = double.negativeInfinity;
+      String topLoser = '';
+      double topLoss = double.infinity;
+
+      for (final item in portfolioItems) {
+        final String ticker = item['ticker'] as String;
+        final double changePct = (item['change_pct'] as num).toDouble();
+        totalChange += changePct;
+        if (changePct > topGain) {
+          topGain = changePct;
+          topGainer = ticker;
+        }
+        if (changePct < topLoss) {
+          topLoss = changePct;
+          topLoser = ticker;
+        }
+      }
+      final avgChange = totalChange / portfolioItems.length;
+      final sign = avgChange >= 0 ? '+' : '';
+      portfolioSummary =
+          'Your portfolio averaged $sign${avgChange.toStringAsFixed(2)}% this week.';
+      if (topGainer.isNotEmpty) {
+        final gSign = topGain >= 0 ? '+' : '';
+        portfolioSummary +=
+            ' Top gainer: $topGainer ($gSign${topGain.toStringAsFixed(1)}%).';
+      }
+      if (topLoser.isNotEmpty && topLoser != topGainer) {
+        portfolioSummary +=
+            ' Top loser: $topLoser (${topLoss.toStringAsFixed(1)}%).';
+      }
+    }
+
+    // Build market overview from loaded stocks
+    String marketOverview = '';
+    if (_searchableStocks.isNotEmpty) {
+      NigerianStock? marketTopGainer;
+      double marketTopGain = double.negativeInfinity;
+      for (final stock in _searchableStocks) {
+        if (stock.change == '-') continue;
+        final pct =
+            double.tryParse(
+              stock.change.replaceAll('%', '').replaceAll('+', ''),
+            ) ??
+            0;
+        if (pct > marketTopGain) {
+          marketTopGain = pct;
+          marketTopGainer = stock;
+        }
+      }
+      if (marketTopGainer != null) {
+        marketOverview =
+            ' Market mover: ${marketTopGainer.symbol} (${marketTopGainer.change}).';
+      }
+    }
+
+    await provider.addNotification(
+      title: 'Weekly Summary',
+      body: '$portfolioSummary$marketOverview',
+      type: NotificationType.weeklySummary,
+      ticker: 'weekly',
+    );
   }
 
   void _openStockSearch(bool isDark) {
@@ -868,8 +1048,9 @@ class _DashboardState extends State<Dashboard>
                       showTitles: true,
                       getTitlesWidget: (value, meta) {
                         final idx = value.toInt();
-                        if (idx < 0 || idx >= _last5DaysDates.length)
+                        if (idx < 0 || idx >= _last5DaysDates.length) {
                           return const SizedBox.shrink();
+                        }
                         return Padding(
                           padding: const EdgeInsets.only(top: 6),
                           child: Text(
@@ -1060,8 +1241,9 @@ class _DashboardState extends State<Dashboard>
                       interval: 1,
                       getTitlesWidget: (value, meta) {
                         final idx = value.toInt();
-                        if (idx < 0 || idx >= _last5DaysDates.length)
+                        if (idx < 0 || idx >= _last5DaysDates.length) {
                           return const SizedBox.shrink();
+                        }
                         return Padding(
                           padding: const EdgeInsets.only(top: 6),
                           child: Text(
@@ -1316,29 +1498,7 @@ class _StockSearchModalState extends State<_StockSearchModal> {
                           ),
                           child: Row(
                             children: [
-                              Container(
-                                width: 44,
-                                height: 44,
-                                decoration: BoxDecoration(
-                                  color: const Color(
-                                    0xFF2979FF,
-                                  ).withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    stock.symbol.substring(
-                                      0,
-                                      min(3, stock.symbol.length),
-                                    ),
-                                    style: const TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                      color: Color(0xFF2979FF),
-                                    ),
-                                  ),
-                                ),
-                              ),
+                              StockLogo(symbol: stock.symbol),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(

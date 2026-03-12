@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:hybstockadvisor/widgets/ai_chat_sheet.dart';
@@ -50,11 +52,12 @@ class _AiInsightsState extends State<AiInsights>
   }
 
   Future<void> _fetchInsights() async {
-    if (mounted)
+    if (mounted) {
       setState(() {
         _isLoading = true;
         _hasError = false;
       });
+    }
     final response = await ApiService.getInsights(_ticker);
 
     if (response != null && response['status'] == 'success') {

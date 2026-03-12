@@ -25,7 +25,10 @@ String get baseUrl => "$host/api";
 
 class ApiService {
   static final navigatorKey = GlobalKey<NavigatorState>();
-  static const _secureStorage = FlutterSecureStorage();
+  static const _secureStorage = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
+  );
 
   static final Dio _dio = _createDio();
 
@@ -321,8 +324,9 @@ class ApiService {
     try {
       // 1. Grab the User ID
       final userId = await _getUserId();
-      if (userId == null)
+      if (userId == null) {
         return {'status': 'error', 'detail': 'Session expired'};
+      }
 
       final response = await _dio.post(
         '/portfolio/add', // <-- No extra /api here
@@ -368,8 +372,9 @@ class ApiService {
   }) async {
     try {
       final userId = await _getUserId();
-      if (userId == null)
+      if (userId == null) {
         return {'status': 'error', 'detail': 'Session expired'};
+      }
 
       // 3. Fixed the double /api/api typo
       final response = await _dio.post(
@@ -392,8 +397,9 @@ class ApiService {
   }) async {
     try {
       final userId = await _getUserId();
-      if (userId == null)
+      if (userId == null) {
         return {'status': 'error', 'detail': 'Session expired'};
+      }
 
       final response = await _dio.delete(
         '/portfolio/remove',
@@ -413,8 +419,9 @@ class ApiService {
   }) async {
     try {
       final userId = await _getUserId();
-      if (userId == null)
+      if (userId == null) {
         return {'status': 'error', 'detail': 'Session expired'};
+      }
 
       final response = await _dio.delete(
         '/watchlist/remove',

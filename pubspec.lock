@@ -17,14 +17,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "10.0.1"
-  animated_splash_screen:
-    dependency: "direct main"
-    description:
-      name: animated_splash_screen
-      sha256: f45634db6ec4e8cf034c53e03f3bd83898a16fe3c9286bf5510b6831dfcf2124
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.3.0"
   animated_switch:
     dependency: "direct main"
     description:
@@ -33,14 +25,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.0.3"
-  another_flutter_splash_screen:
-    dependency: "direct main"
-    description:
-      name: another_flutter_splash_screen
-      sha256: feb42edf8c67bc991eabb67b4aeb6832dd7f829f3d72102a5f8b6af3ae6c5933
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.2.1"
   archive:
     dependency: transitive
     description:
@@ -114,7 +98,7 @@ packages:
     source: hosted
     version: "4.1.1"
   build_runner:
-    dependency: "direct main"
+    dependency: "direct dev"
     description:
       name: build_runner
       sha256: "39ad4ca8a2876779737c60e4228b4bcd35d4352ef7e14e47514093edc012c734"
@@ -297,14 +281,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.3.3"
-  family_bottom_sheet:
-    dependency: "direct main"
-    description:
-      name: family_bottom_sheet
-      sha256: "2c3763bd5a01f865c71ab097978d3be9e82749a39044f2a0eb6f72e15e2c9555"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.0.2"
   ffi:
     dependency: transitive
     description:
@@ -391,7 +367,7 @@ packages:
     source: hosted
     version: "5.2.1"
   flutter_launcher_icons:
-    dependency: "direct main"
+    dependency: "direct dev"
     description:
       name: flutter_launcher_icons
       sha256: "526faf84284b86a4cb36d20a5e45147747b7563d921373d4ee0559c54fcdbcea"
@@ -726,7 +702,7 @@ packages:
     source: hosted
     version: "4.11.0"
   json_serializable:
-    dependency: "direct main"
+    dependency: "direct dev"
     description:
       name: json_serializable
       sha256: "44729f5c45748e6748f6b9a57ab8f7e4336edc8ae41fc295070e3814e616a6c0"
@@ -853,14 +829,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.2.1"
-  page_transition:
-    dependency: transitive
-    description:
-      name: page_transition
-      sha256: "9d2a780d7d68b53ae82fbcc43e06a16195e6775e9aae40e55dc0cbb593460f9d"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.2.1"
   path:
     dependency: "direct main"
     description:
@@ -1106,14 +1074,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.10.2"
-  splash_view:
-    dependency: "direct main"
-    description:
-      name: splash_view
-      sha256: fd556452e8e51842a2797d0da6862fc5fb6d665ffe57be7213744a5d1e83dda8
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.0.1"
   stack_trace:
     dependency: transitive
     description:
