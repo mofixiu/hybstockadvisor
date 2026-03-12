@@ -151,10 +151,8 @@ class _DashboardState extends State<Dashboard>
     // 2. Fetch the AI Insights for the selected stock
     _fetchAIInsights(_selectedStock.symbol);
 
-    // 3. Fire notifications once per dashboard load (dedup prevents repeats)
-    _firePortfolioNotifications();
-    _fireStrongBuyNotifications();
-    _checkWeeklySummary();
+    // 3. Fire notifications (capped at 7 per session, prioritized)
+    _fireAllNotifications();
   }
 
   Future<void> _fetchAIInsights(String ticker) async {
@@ -234,19 +232,17 @@ class _DashboardState extends State<Dashboard>
     }
   }
 
-  /// Fire AI Forecast, Safety Index, Sell/Strong Sell, and Price Movement
-  /// notifications for stocks the user actually holds in their portfolio.
-  Future<void> _firePortfolioNotifications() async {
+  // ── Notification priority: lower number = higher priority ──
+  // Weekly=0, Sell/StrongSell=1, StrongBuy=2, AIInsight=3, PriceAlert=4
+  static const int _maxNotificationsPerSession = 7;
+
+  /// Master notification dispatcher. Collects all candidates, sorts by
+  /// priority, then fires only the top [_maxNotificationsPerSession].
+  Future<void> _fireAllNotifications() async {
     if (!mounted) return;
     final box = await Hive.openBox('user');
     if (!mounted) return;
     final provider = Provider.of<NotificationProvider>(context, listen: false);
-
-    final data = await ApiService.getUserAssets();
-    if (data == null || !mounted) return;
-
-    final portfolioItems = data['portfolio'] as List? ?? [];
-    if (portfolioItems.isEmpty) return;
 
     final bool notifForecast =
         box.get('notif_ai_forecast', defaultValue: true) == true;
@@ -254,168 +250,180 @@ class _DashboardState extends State<Dashboard>
         box.get('notif_safety_index', defaultValue: true) == true;
     final bool notifPrice =
         box.get('notif_price_movement', defaultValue: true) == true;
+    final bool notifWeekly =
+        box.get('notif_weekly_summary', defaultValue: false) == true;
 
-    // Fetch forecasts for all portfolio stocks in parallel
-    final tickers = portfolioItems.map((e) => e['ticker'] as String).toList();
-    final forecasts = await Future.wait(
-      tickers.map((t) => ApiService.getStockForecast(t)),
-    );
-    if (!mounted) return;
+    // Each candidate: (priority, title, body, type, ticker)
+    final List<(int, String, String, NotificationType, String?)> candidates =
+        [];
 
-    for (int i = 0; i < tickers.length; i++) {
-      final ticker = tickers[i];
-      final response = forecasts[i];
-      if (response == null || response['status'] != 'success') continue;
+    // ── 1. Weekly Summary (priority 0) ──
+    if (notifWeekly) {
+      final weeklyCand = await _collectWeeklySummary();
+      if (weeklyCand != null) candidates.add(weeklyCand);
+    }
 
-      final List<dynamic> history = response['data'];
-      if (history.isEmpty) continue;
+    // ── 2-4. Portfolio-based notifications ──
+    final data = await ApiService.getUserAssets();
+    if (data != null && mounted) {
+      final portfolioItems = data['portfolio'] as List? ?? [];
+      final tickers = portfolioItems.map((e) => e['ticker'] as String).toList();
 
-      final todayData = history.last;
-      final double safetyIdx = (todayData['Safety_Index'] as num).toDouble();
-      final String recommendation = todayData['Recommendation']
-          .toString()
-          .replaceAll(RegExp(r'[^\w\s]'), '')
-          .trim();
-
-      // Price change from last two days
-      String changeStr = '-';
-      if (history.length >= 2) {
-        final today = (history.last['close'] as num).toDouble();
-        final yesterday = (history[history.length - 2]['close'] as num)
-            .toDouble();
-        final pct = ((today - yesterday) / yesterday) * 100;
-        if (pct > 0) {
-          changeStr = '+${pct.toStringAsFixed(2)}%';
-        } else if (pct < 0) {
-          changeStr = '${pct.toStringAsFixed(2)}%';
-        }
-      }
-
-      // Combined AI Forecast + Safety Index notification (once per day per ticker)
-      if (notifForecast || notifSafety) {
-        await provider.addNotification(
-          title: 'AI Insight: $ticker',
-          body:
-              '$ticker is rated "$recommendation" with a safety index of ${safetyIdx.toStringAsFixed(1)}',
-          type: NotificationType.aiForecast,
-          ticker: ticker,
+      if (tickers.isNotEmpty) {
+        final forecasts = await Future.wait(
+          tickers.map((t) => ApiService.getStockForecast(t)),
         );
-      }
+        if (!mounted) return;
 
-      // Sell / Strong Sell alert for portfolio stocks
-      final recLower = recommendation.toLowerCase();
-      if (recLower.contains('sell')) {
-        await provider.addNotification(
-          title: recLower.contains('strong')
-              ? 'Strong Sell Alert'
-              : 'Sell Alert',
-          body:
+        for (int i = 0; i < tickers.length; i++) {
+          final ticker = tickers[i];
+          final response = forecasts[i];
+          if (response == null || response['status'] != 'success') continue;
+
+          final List<dynamic> history = response['data'];
+          if (history.isEmpty) continue;
+
+          final todayData = history.last;
+          final double safetyIdx = (todayData['Safety_Index'] as num)
+              .toDouble();
+          final String recommendation = todayData['Recommendation']
+              .toString()
+              .replaceAll(RegExp(r'[^\w\s]'), '')
+              .trim();
+          final recLower = recommendation.toLowerCase();
+
+          // Sell / Strong Sell (priority 1)
+          if (recLower.contains('sell')) {
+            final isSS = recLower.contains('strong');
+            candidates.add((
+              1,
+              isSS ? 'Strong Sell Alert' : 'Sell Alert',
               '$ticker is rated "$recommendation". Consider reviewing your position.',
-          type: NotificationType.aiForecast,
-          ticker: '${ticker}_sell',
-        );
-      }
+              NotificationType.aiForecast,
+              '${ticker}_sell',
+            ));
+          }
 
-      // Price movement notification (only if ≥ 3% change)
-      if (notifPrice && changeStr != '-') {
-        double pct = 0.0;
-        try {
-          pct = double.parse(changeStr.replaceAll('%', '').replaceAll('+', ''));
-        } catch (_) {}
-        if (pct.abs() >= 3.0) {
-          await provider.addNotification(
-            title: 'Portfolio Price Alert',
-            body: '$ticker moved $changeStr today',
-            type: NotificationType.priceMovement,
-            ticker: ticker,
-          );
+          // AI Insight — only when notable: safety < 4 or > 7 (priority 3)
+          if ((notifForecast || notifSafety) &&
+              (safetyIdx < 4.0 || safetyIdx > 7.0)) {
+            candidates.add((
+              3,
+              'AI Insight: $ticker',
+              '$ticker is rated "$recommendation" with a safety index of ${safetyIdx.toStringAsFixed(1)}',
+              NotificationType.aiForecast,
+              ticker,
+            ));
+          }
+
+          // Price movement ≥ 3% (priority 4)
+          if (notifPrice && history.length >= 2) {
+            final today = (history.last['close'] as num).toDouble();
+            final yesterday = (history[history.length - 2]['close'] as num)
+                .toDouble();
+            final pct = ((today - yesterday) / yesterday) * 100;
+            if (pct.abs() >= 3.0) {
+              final changeStr = pct > 0
+                  ? '+${pct.toStringAsFixed(2)}%'
+                  : '${pct.toStringAsFixed(2)}%';
+              candidates.add((
+                4,
+                'Portfolio Price Alert',
+                '$ticker moved $changeStr today',
+                NotificationType.priceMovement,
+                ticker,
+              ));
+            }
+          }
         }
       }
     }
-  }
 
-  /// Fire Strong Buy notifications for all market stocks (top 3 by safety index).
-  Future<void> _fireStrongBuyNotifications() async {
-    if (!mounted) return;
-    final box = await Hive.openBox('user');
-    if (!mounted) return;
-    if (box.get('notif_ai_forecast', defaultValue: true) != true) return;
-
-    final provider = Provider.of<NotificationProvider>(context, listen: false);
-
-    // Use the already-loaded market stock list
-    final tickers = _searchableStocks.map((s) => s.symbol).toList();
-    if (tickers.isEmpty) return;
-
-    // Fetch forecasts in parallel
-    final forecasts = await Future.wait(
-      tickers.map((t) => ApiService.getStockForecast(t)),
-    );
-    if (!mounted) return;
-
-    // Collect all strong buy candidates with their safety index
-    final List<({String ticker, String recommendation, double safetyIndex})>
-    candidates = [];
-
-    for (int i = 0; i < tickers.length; i++) {
-      final ticker = tickers[i];
-      final response = forecasts[i];
-      if (response == null || response['status'] != 'success') continue;
-
-      final List<dynamic> history = response['data'];
-      if (history.isEmpty) continue;
-
-      final todayData = history.last;
-      final String recommendation = todayData['Recommendation']
-          .toString()
-          .replaceAll(RegExp(r'[^\w\s]'), '')
-          .trim();
-
-      if (recommendation.toLowerCase().contains('strong') &&
-          recommendation.toLowerCase().contains('buy')) {
-        final double safetyIdx = (todayData['Safety_Index'] as num).toDouble();
-        candidates.add((
-          ticker: ticker,
-          recommendation: recommendation,
-          safetyIndex: safetyIdx,
-        ));
-      }
+    // ── 5. Strong Buy alerts (priority 2) — top 3 from all market stocks ──
+    if (notifForecast && mounted) {
+      final strongBuyCandidates = await _collectStrongBuyCandidates();
+      candidates.addAll(strongBuyCandidates);
     }
 
-    // Sort by safety index descending and take top 3
-    candidates.sort((a, b) => b.safetyIndex.compareTo(a.safetyIndex));
-    final topCandidates = candidates.take(3);
+    if (!mounted) return;
 
-    for (final c in topCandidates) {
+    // ── Sort by priority (ascending) and cap ──
+    candidates.sort((a, b) => a.$1.compareTo(b.$1));
+    final capped = candidates.take(_maxNotificationsPerSession);
+
+    for (final (_, title, body, type, ticker) in capped) {
       await provider.addNotification(
-        title: 'Strong Buy Alert',
-        body:
-            '${c.ticker} is rated "${c.recommendation}" (Safety: ${c.safetyIndex.toStringAsFixed(1)}). This could be a buying opportunity.',
-        type: NotificationType.aiForecast,
-        ticker: '${c.ticker}_strongbuy',
+        title: title,
+        body: body,
+        type: type,
+        ticker: ticker,
       );
     }
   }
 
-  /// Generate a weekly summary notification every Friday.
-  Future<void> _checkWeeklySummary() async {
-    if (!mounted) return;
+  /// Collect strong buy candidates from all market stocks (priority 2).
+  Future<List<(int, String, String, NotificationType, String?)>>
+  _collectStrongBuyCandidates() async {
+    final tickers = _searchableStocks.map((s) => s.symbol).toList();
+    if (tickers.isEmpty) return [];
+
+    final forecasts = await Future.wait(
+      tickers.map((t) => ApiService.getStockForecast(t)),
+    );
+    if (!mounted) return [];
+
+    final List<({String ticker, String recommendation, double safetyIndex})>
+    raw = [];
+
+    for (int i = 0; i < tickers.length; i++) {
+      final response = forecasts[i];
+      if (response == null || response['status'] != 'success') continue;
+
+      final List<dynamic> history = response['data'];
+      if (history.isEmpty) continue;
+
+      final todayData = history.last;
+      final String rec = todayData['Recommendation']
+          .toString()
+          .replaceAll(RegExp(r'[^\w\s]'), '')
+          .trim();
+
+      if (rec.toLowerCase().contains('strong') &&
+          rec.toLowerCase().contains('buy')) {
+        raw.add((
+          ticker: tickers[i],
+          recommendation: rec,
+          safetyIndex: (todayData['Safety_Index'] as num).toDouble(),
+        ));
+      }
+    }
+
+    raw.sort((a, b) => b.safetyIndex.compareTo(a.safetyIndex));
+    return raw
+        .take(3)
+        .map(
+          (c) => (
+            2,
+            'Strong Buy Alert',
+            '${c.ticker} is rated "${c.recommendation}" (Safety: ${c.safetyIndex.toStringAsFixed(1)}). This could be a buying opportunity.',
+            NotificationType.aiForecast,
+            '${c.ticker}_strongbuy' as String?,
+          ),
+        )
+        .toList();
+  }
+
+  /// Collect a weekly summary candidate (priority 0). Returns null if not Friday.
+  Future<(int, String, String, NotificationType, String?)?>
+  _collectWeeklySummary() async {
     final now = DateTime.now();
-    if (now.weekday != DateTime.friday) return;
+    if (now.weekday != DateTime.friday) return null;
 
-    final box = await Hive.openBox('user');
-    if (!mounted) return;
-    if (box.get('notif_weekly_summary', defaultValue: false) != true) return;
-
-    final provider = Provider.of<NotificationProvider>(context, listen: false);
-
-    // Fetch portfolio data
     final data = await ApiService.getUserAssets();
-    if (data == null || !mounted) return;
+    if (data == null || !mounted) return null;
 
     final portfolioItems = data['portfolio'] as List? ?? [];
 
-    // Build portfolio summary
     String portfolioSummary;
     if (portfolioItems.isEmpty) {
       portfolioSummary =
@@ -455,7 +463,6 @@ class _DashboardState extends State<Dashboard>
       }
     }
 
-    // Build market overview from loaded stocks
     String marketOverview = '';
     if (_searchableStocks.isNotEmpty) {
       NigerianStock? marketTopGainer;
@@ -478,11 +485,12 @@ class _DashboardState extends State<Dashboard>
       }
     }
 
-    await provider.addNotification(
-      title: 'Weekly Summary',
-      body: '$portfolioSummary$marketOverview',
-      type: NotificationType.weeklySummary,
-      ticker: 'weekly',
+    return (
+      0,
+      'Weekly Summary',
+      '$portfolioSummary$marketOverview',
+      NotificationType.weeklySummary,
+      'weekly' as String?,
     );
   }
 

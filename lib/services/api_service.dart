@@ -75,8 +75,8 @@ class ApiService {
     final dio = Dio(
       BaseOptions(
         baseUrl: baseUrl,
-        connectTimeout: const Duration(seconds: 10),
-        receiveTimeout: const Duration(seconds: 10),
+        connectTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 30),
         headers: {'Accept': 'application/json'},
       ),
     );
@@ -499,6 +499,7 @@ class ApiService {
   }
 
   // --- AI CHATBOT METHOD ---
+  // --- AI CHATBOT METHOD ---
   static Future<String> sendChatMessage(
     String message, {
     String? currentTicker,
@@ -513,16 +514,22 @@ class ApiService {
         },
       );
       if (response.statusCode == 200 && response.data['reply'] != null) {
-        // 🚨 NEW: Clean the string by replacing all '**' with nothing!
+        // Clean the string by replacing all '**' with nothing!
         String cleanReply = response.data['reply'].replaceAll('**', '');
         return cleanReply;
       }
-      if (response.statusCode == 200 && response.data['status'] == 'success') {
-        return response.data['reply'];
-      }
       return "Sorry, I couldn't process that.";
-    } catch (e) {
+    } on DioException catch (e) {
+      // 🚨 NEW: Catch timeouts and print exact errors to your terminal!
+      log("🚨 CHAT ERROR: ${e.type} - ${e.message}");
+
+      if (e.type == DioExceptionType.receiveTimeout) {
+        return "Lexi is processing a lot of portfolio data right now! Give me a few more seconds and try again.";
+      }
       return "Network error. Please check your connection.";
+    } catch (e) {
+      log("🚨 GENERAL ERROR: $e");
+      return "An unexpected error occurred.";
     }
   }
 }
