@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import 'dart:math';
 
 import 'package:hybstockadvisor/models/app_notification.dart';
+import 'package:hybstockadvisor/providers/market_data_provider.dart';
 import 'package:hybstockadvisor/providers/notification_provider.dart';
 import 'package:hybstockadvisor/services/api_service.dart';
 import 'package:hybstockadvisor/widgets/custom_page_route.dart';
@@ -72,8 +73,8 @@ class Dashboard extends StatefulWidget {
 class _DashboardState extends State<Dashboard>
     with SingleTickerProviderStateMixin {
   // Live API Data List
-  List<NigerianStock> _searchableStocks = List.from(defaultNigerianStocks);
-  NigerianStock _selectedStock = defaultNigerianStocks.first;
+  List<NigerianStock> _searchableStocks = [];
+  NigerianStock? _selectedStock;
 
   // --- AI State Variables ---
   bool _isLoading = true;
@@ -106,7 +107,18 @@ class _DashboardState extends State<Dashboard>
 
   // 1. Fetch the entire market list first
   Future<void> _fetchMarketSummaryAndStart() async {
-    final summaryRes = await ApiService.getMarketSummary();
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _hasError = false;
+      });
+    }
+
+    final summaryRes = await context
+        .read<MarketDataProvider>()
+        .getMarketSummary();
+
+    if (!mounted) return;
 
     if (summaryRes != null && summaryRes['status'] == 'success') {
       List<dynamic> rawList = summaryRes['data'];
@@ -138,24 +150,47 @@ class _DashboardState extends State<Dashboard>
         );
       }
 
+      if (liveList.isNotEmpty) {
+        setState(() {
+          _searchableStocks = liveList;
+          _selectedStock = liveList.firstWhere(
+            (s) => s.symbol == ApiService.currentTicker,
+            orElse: () => liveList.first,
+          );
+        });
+      } else {
+        setState(() {
+          _searchableStocks = [];
+          _selectedStock = null;
+          _isLoading = false;
+          _hasError = true;
+        });
+        return;
+      }
+    } else {
       setState(() {
-        _searchableStocks = liveList;
-        // Default to GTCO or the first available stock
-        _selectedStock = liveList.firstWhere(
-          (s) => s.symbol == ApiService.currentTicker,
-          orElse: () => liveList.first,
-        );
+        _searchableStocks = [];
+        _selectedStock = null;
+        _isLoading = false;
+        _hasError = true;
       });
+      return;
     }
 
+    if (!mounted) return;
+
     // 2. Fetch the AI Insights for the selected stock
-    _fetchAIInsights(_selectedStock.symbol);
+    final selectedStock = _selectedStock;
+    if (selectedStock != null) {
+      _fetchAIInsights(selectedStock.symbol);
+    }
 
     // 3. Fire notifications (capped at 7 per session, prioritized)
     _fireAllNotifications();
   }
 
   Future<void> _fetchAIInsights(String ticker) async {
+    if (!mounted) return;
     ApiService.currentTicker = ticker;
 
     setState(() {
@@ -163,7 +198,11 @@ class _DashboardState extends State<Dashboard>
       _hasError = false;
     });
 
-    final response = await ApiService.getStockForecast(ticker);
+    final response = await context.read<MarketDataProvider>().getStockForecast(
+      ticker,
+    );
+
+    if (!mounted) return;
 
     if (response != null && response['status'] == 'success') {
       List<dynamic> historicalData = response['data'];
@@ -183,6 +222,14 @@ class _DashboardState extends State<Dashboard>
           DateTime dt = DateTime.parse(day['date']);
           const weekdays = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
           dates.add(weekdays[dt.weekday - 1]);
+        }
+
+        NigerianStock? existingStock;
+        for (final stock in _searchableStocks) {
+          if (stock.symbol == ticker) {
+            existingStock = stock;
+            break;
+          }
         }
 
         // Dynamic change logic (handles flat lines properly)
@@ -212,8 +259,9 @@ class _DashboardState extends State<Dashboard>
           // Update the specific stock instance in the UI
           _selectedStock = NigerianStock(
             symbol: ticker,
-            name: _selectedStock.name,
-            marketCap: _selectedStock.marketCap,
+            name: existingStock?.name ?? _selectedStock?.name ?? '$ticker Plc',
+            marketCap:
+                existingStock?.marketCap ?? _selectedStock?.marketCap ?? '--',
             price: _currentPrice,
             change: _priceChange,
           );
@@ -270,8 +318,9 @@ class _DashboardState extends State<Dashboard>
       final tickers = portfolioItems.map((e) => e['ticker'] as String).toList();
 
       if (tickers.isNotEmpty) {
+        final marketDataProvider = context.read<MarketDataProvider>();
         final forecasts = await Future.wait(
-          tickers.map((t) => ApiService.getStockForecast(t)),
+          tickers.map((t) => marketDataProvider.getStockForecast(t)),
         );
         if (!mounted) return;
 
@@ -367,8 +416,9 @@ class _DashboardState extends State<Dashboard>
     final tickers = _searchableStocks.map((s) => s.symbol).toList();
     if (tickers.isEmpty) return [];
 
+    final marketDataProvider = context.read<MarketDataProvider>();
     final forecasts = await Future.wait(
-      tickers.map((t) => ApiService.getStockForecast(t)),
+      tickers.map((t) => marketDataProvider.getStockForecast(t)),
     );
     if (!mounted) return [];
 
@@ -505,8 +555,8 @@ class _DashboardState extends State<Dashboard>
         onSelected: (stock) {
           setState(() {
             _selectedStock = stock;
-            _fetchAIInsights(stock.symbol);
           });
+          _fetchAIInsights(stock.symbol);
           Navigator.pop(context);
         },
       ),
@@ -541,13 +591,15 @@ class _DashboardState extends State<Dashboard>
             borderRadius: BorderRadius.circular(14),
           ),
           onPressed: () {
+            final selectedStock = _selectedStock;
+            if (selectedStock == null) return;
             showModalBottomSheet(
               context: context,
               isScrollControlled: true,
               backgroundColor: Colors.transparent,
               builder: (context) => AiChatSheet(
                 isDark: isDark,
-                currentTicker: _selectedStock.symbol,
+                currentTicker: selectedStock.symbol,
               ),
             );
           },
@@ -593,7 +645,7 @@ class _DashboardState extends State<Dashboard>
                       ),
                       const SizedBox(height: 20),
 
-                      _buildSearchBar(isDark),
+                      _buildSearchBar(isDark, _selectedStock),
                       const SizedBox(height: 20),
 
                       if (_isLoading && _shimmerController != null)
@@ -604,12 +656,16 @@ class _DashboardState extends State<Dashboard>
                       else if (_hasError)
                         SizedBox(
                           height: 380,
-                          child: _buildNetworkError(
-                            textColor,
-                            () => _fetchAIInsights(_selectedStock.symbol),
-                          ),
+                          child: _buildNetworkError(textColor, () {
+                            final selectedStock = _selectedStock;
+                            if (selectedStock != null) {
+                              _fetchAIInsights(selectedStock.symbol);
+                            } else {
+                              _fetchMarketSummaryAndStart();
+                            }
+                          }),
                         )
-                      else if (!_isLoading) ...[
+                      else if (!_isLoading && _selectedStock != null) ...[
                         _buildSafetyIndexCard(isDark),
                         const SizedBox(height: 5),
                         Center(
@@ -628,7 +684,7 @@ class _DashboardState extends State<Dashboard>
                         const SizedBox(height: 20),
                         _buildCurrentPriceCard(isDark),
                         const SizedBox(height: 16),
-                        _buildLast5DaysCard(isDark),
+                        _buildLast5DaysCard(isDark, _selectedStock!),
                         const SizedBox(height: 20),
                       ],
                     ],
@@ -767,7 +823,15 @@ class _DashboardState extends State<Dashboard>
     );
   }
 
-  Widget _buildSearchBar(bool isDark) {
+  Widget _buildSearchBar(bool isDark, NigerianStock? selectedStock) {
+    if ((_isLoading || selectedStock == null) && _shimmerController != null) {
+      return _buildSearchBarShimmer(isDark);
+    }
+
+    if (selectedStock == null) {
+      return const SizedBox.shrink();
+    }
+
     final changeIsPositive = _priceChange.startsWith('+');
     final changeIsNeutral = _priceChange == '-';
 
@@ -795,7 +859,7 @@ class _DashboardState extends State<Dashboard>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${_selectedStock.symbol} (${_selectedStock.name.split(' ').take(2).join(' ')})',
+                    '${selectedStock.symbol} (${selectedStock.name.split(' ').take(2).join(' ')})',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
@@ -804,7 +868,7 @@ class _DashboardState extends State<Dashboard>
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
-                    '₦${_currentPrice.toStringAsFixed(2)}  •  Mkt Cap: ${_selectedStock.marketCap}',
+                    '₦${_currentPrice.toStringAsFixed(2)}  •  Mkt Cap: ${selectedStock.marketCap}',
                     style: TextStyle(fontSize: 11, color: Colors.grey[500]),
                   ),
                 ],
@@ -835,6 +899,39 @@ class _DashboardState extends State<Dashboard>
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildSearchBarShimmer(bool isDark) {
+    final baseColor = isDark
+        ? const Color(0xFF2A2D3E)
+        : const Color(0xFFE0E0E0);
+    final highlightColor = isDark
+        ? const Color(0xFF3A3D4E)
+        : const Color(0xFFF5F5F5);
+
+    return AnimatedBuilder(
+      animation: _shimmerController!,
+      builder: (context, _) {
+        final shimmer = LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [baseColor, highlightColor, baseColor],
+          stops: [
+            (_shimmerController!.value - 0.3).clamp(0.0, 1.0),
+            _shimmerController!.value.clamp(0.0, 1.0),
+            (_shimmerController!.value + 0.3).clamp(0.0, 1.0),
+          ],
+        );
+
+        return Container(
+          height: 58,
+          decoration: BoxDecoration(
+            gradient: shimmer,
+            borderRadius: BorderRadius.circular(14),
+          ),
+        );
+      },
     );
   }
 
@@ -953,7 +1050,7 @@ class _DashboardState extends State<Dashboard>
     );
   }
 
-  Widget _buildLast5DaysCard(bool isDark) {
+  Widget _buildLast5DaysCard(bool isDark, NigerianStock selectedStock) {
     double maxPrice = _last5DaysPrices.isNotEmpty
         ? _last5DaysPrices.reduce(max)
         : 100;
@@ -996,7 +1093,7 @@ class _DashboardState extends State<Dashboard>
           Row(
             children: [
               Text(
-                '₦${_selectedStock.price.toStringAsFixed(2)}',
+                '₦${selectedStock.price.toStringAsFixed(2)}',
                 style: TextStyle(
                   fontSize: 25,
                   fontWeight: FontWeight.bold,
@@ -1004,7 +1101,7 @@ class _DashboardState extends State<Dashboard>
                 ),
               ),
               const SizedBox(width: 8),
-              if (_selectedStock.change != '-')
+              if (selectedStock.change != '-')
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 6,
@@ -1012,16 +1109,16 @@ class _DashboardState extends State<Dashboard>
                   ),
                   decoration: BoxDecoration(
                     color:
-                        (_selectedStock.change.startsWith('+')
+                        (selectedStock.change.startsWith('+')
                                 ? Colors.green
                                 : Colors.red)
                             .withOpacity(0.1),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
-                    _selectedStock.change,
+                    selectedStock.change,
                     style: TextStyle(
-                      color: _selectedStock.change.startsWith('+')
+                      color: selectedStock.change.startsWith('+')
                           ? Colors.green
                           : Colors.red,
                       fontSize: 12,

@@ -826,11 +826,7 @@ class _PortfolioState extends State<Portfolio>
 
       bottomNavigationBar: const BottomNavBar(currentIndex: 2),
       body: SafeArea(
-        child: isLoading
-            ? const Center(
-                child: CircularProgressIndicator(color: Color(0xFF0A3D62)),
-              )
-            : hasError
+        child: hasError
             ? _buildNetworkError(textColor)
             : CustomScrollView(
                 slivers: [
@@ -927,7 +923,7 @@ class _PortfolioState extends State<Portfolio>
                   const SliverToBoxAdapter(child: SizedBox(height: 12)),
 
                   // ── Stock List (Portfolio) ──
-                  if (isRefreshing && _shimmerController != null)
+                  if ((isLoading || isRefreshing) && _shimmerController != null)
                     SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (_, __) => Padding(
@@ -1134,7 +1130,7 @@ class _PortfolioState extends State<Portfolio>
                   const SliverToBoxAdapter(child: SizedBox(height: 12)),
 
                   // ── Watch List ──
-                  if (isRefreshing && _shimmerController != null)
+                  if ((isLoading || isRefreshing) && _shimmerController != null)
                     SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (_, __) => Padding(
