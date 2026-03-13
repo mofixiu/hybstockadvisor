@@ -7,11 +7,11 @@ import 'package:hybstockadvisor/widgets/ai_chat_sheet.dart';
 import 'package:provider/provider.dart';
 import 'package:text_scroll/text_scroll.dart';
 import 'package:hybstockadvisor/widgets/bottomNavBar.dart';
-import 'package:hybstockadvisor/services/api_service.dart';
 import 'dart:math';
 
 import 'package:hybstockadvisor/models/app_notification.dart';
 import 'package:hybstockadvisor/providers/notification_provider.dart';
+import 'package:hybstockadvisor/providers/portfolio_provider.dart';
 // We import Dashboard to access NigerianStock model and default lists
 import 'package:hybstockadvisor/screens/dashboard.dart';
 import 'package:hybstockadvisor/widgets/stock_logo.dart';
@@ -30,12 +30,6 @@ class Portfolio extends StatefulWidget {
 
 class _PortfolioState extends State<Portfolio>
     with SingleTickerProviderStateMixin {
-  bool _isLoading = true;
-  bool _isRefreshing = false;
-  bool _hasError = false;
-  List<_StockItem> _portfolioStocks = [];
-  List<_StockItem> _watchlistStocks = [];
-  List<NigerianStock> _availableMarketStocks = [];
   _SortOption _portfolioSort = _SortOption.nameAZ;
   _SortOption _watchlistSort = _SortOption.nameAZ;
   AnimationController? _shimmerController;
@@ -47,7 +41,9 @@ class _PortfolioState extends State<Portfolio>
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     )..repeat();
-    _fetchInitialData();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _fetchInitialData();
+    });
   }
 
   @override
@@ -57,78 +53,17 @@ class _PortfolioState extends State<Portfolio>
   }
 
   Future<void> _fetchInitialData() async {
+    final provider = context.read<PortfolioProvider>();
+    await provider.loadInitial();
     if (!mounted) return;
-    setState(() => _isLoading = true);
-
-    // 1. Fetch Market Summary for the Search Modal
-    final summaryRes = await ApiService.getMarketSummary();
-    if (!mounted) return;
-    if (summaryRes != null && summaryRes['status'] == 'success') {
-      List<dynamic> rawList = summaryRes['data'];
-      _availableMarketStocks = rawList.map((item) {
-        String sym = item['symbol'];
-        return NigerianStock(
-          symbol: sym,
-          name: item['name'] ?? '$sym Plc',
-          marketCap: item['market_cap'] ?? '--',
-          price: (item['price'] as num).toDouble(),
-          change:
-              '${(item['change_pct'] as num).toDouble() >= 0 ? '+' : ''}${(item['change_pct'] as num).toDouble().toStringAsFixed(2)}%',
-        );
-      }).toList();
-    } else {
-      _availableMarketStocks = [];
-    }
-
-    // 2. Fetch User's actual Portfolio & Watchlist from DB
-    await _refreshUserAssets();
-  }
-
-  Future<void> _refreshUserAssets() async {
-    if (!mounted) return;
-    final data = await ApiService.getUserAssets();
-
-    if (!mounted) return;
-    if (data != null) {
-      final portfolioItems = (data['portfolio'] as List)
-          .map((item) => _buildUIStockItem(item, isPortfolio: true))
-          .toList();
-      final watchlistItems = (data['watchlist'] as List)
-          .map((item) => _buildUIStockItem(item, isPortfolio: false))
-          .toList();
-
-      setState(() {
-        _portfolioStocks = portfolioItems;
-        _watchlistStocks = watchlistItems;
-        _isLoading = false;
-        _isRefreshing = false;
-        _hasError = false;
-      });
-
-      // Fire price movement notifications for portfolio stocks with ≥3% change
-      if (mounted) {
-        _firePortfolioNotifications(portfolioItems, data['portfolio'] as List);
-      }
-    } else {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _isRefreshing = false;
-          _hasError = true;
-        });
-      }
-    }
+    await _firePortfolioNotificationsFromProvider(provider);
   }
 
   Future<void> _removePortfolioItem(String ticker) async {
-    // Optimistic remove
-    setState(() {
-      _portfolioStocks.removeWhere((s) => s.symbol == ticker);
-    });
-    final res = await ApiService.removeFromPortfolio(ticker: ticker);
+    final provider = context.read<PortfolioProvider>();
+    final res = await provider.removeFromPortfolioOptimistic(ticker: ticker);
     if (!mounted) return;
     if (res['status'] != 'success') {
-      await _refreshUserAssets(); // revert on failure
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -141,14 +76,10 @@ class _PortfolioState extends State<Portfolio>
   }
 
   Future<void> _removeWatchlistItem(String ticker) async {
-    // Optimistic remove
-    setState(() {
-      _watchlistStocks.removeWhere((s) => s.symbol == ticker);
-    });
-    final res = await ApiService.removeFromWatchlist(ticker: ticker);
+    final provider = context.read<PortfolioProvider>();
+    final res = await provider.removeFromWatchlistOptimistic(ticker: ticker);
     if (!mounted) return;
     if (res['status'] != 'success') {
-      await _refreshUserAssets(); // revert on failure
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -185,6 +116,17 @@ class _PortfolioState extends State<Portfolio>
         );
       }
     }
+  }
+
+  Future<void> _firePortfolioNotificationsFromProvider(
+    PortfolioProvider portfolioProvider,
+  ) async {
+    final rawItems = portfolioProvider.portfolioRaw;
+    if (rawItems.isEmpty) return;
+    final items = rawItems
+        .map((item) => _buildUIStockItem(item, isPortfolio: true))
+        .toList();
+    await _firePortfolioNotifications(items, rawItems);
   }
 
   // ── Convert API Data to UI Cards ──
@@ -431,9 +373,14 @@ class _PortfolioState extends State<Portfolio>
 
   // ── Stock Picker ──
   void _openStockPicker(bool isDark, {required bool isPortfolio}) {
+    final portfolioProvider = context.read<PortfolioProvider>();
     List<String> alreadySelected = isPortfolio
-        ? _portfolioStocks.map((e) => e.symbol).toList()
-        : _watchlistStocks.map((e) => e.symbol).toList();
+        ? portfolioProvider.portfolioRaw
+              .map((e) => e['ticker'] as String)
+              .toList()
+        : portfolioProvider.watchlistRaw
+              .map((e) => e['ticker'] as String)
+              .toList();
 
     showModalBottomSheet(
       context: context,
@@ -441,7 +388,7 @@ class _PortfolioState extends State<Portfolio>
       backgroundColor: Colors.transparent,
       builder: (_) => _StockPickerModal(
         isDark: isDark,
-        stocksList: _availableMarketStocks,
+        stocksList: portfolioProvider.availableMarketStocks,
         alreadySelected: alreadySelected,
         onSelected: (stock) async {
           Navigator.pop(context); // Close picker
@@ -449,9 +396,9 @@ class _PortfolioState extends State<Portfolio>
           if (isPortfolio) {
             _showQuantityDialog(stock, isDark);
           } else {
-            // Add to Watchlist Directly
-            setState(() => _isRefreshing = true);
-            final res = await ApiService.addToWatchlist(ticker: stock.symbol);
+            final res = await portfolioProvider.addToWatchlist(
+              ticker: stock.symbol,
+            );
             if (!mounted) return;
             if (res['status'] == 'success') {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -460,7 +407,7 @@ class _PortfolioState extends State<Portfolio>
                   backgroundColor: Colors.green,
                 ),
               );
-              _refreshUserAssets();
+              await _firePortfolioNotificationsFromProvider(portfolioProvider);
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -468,7 +415,6 @@ class _PortfolioState extends State<Portfolio>
                   backgroundColor: Colors.red,
                 ),
               );
-              setState(() => _isRefreshing = false);
             }
           }
         },
@@ -557,9 +503,8 @@ class _PortfolioState extends State<Portfolio>
               if (qty == null || price == null) return;
 
               Navigator.pop(ctx); // Close dialog
-              setState(() => _isRefreshing = true);
-
-              final res = await ApiService.addToPortfolio(
+              final portfolioProvider = context.read<PortfolioProvider>();
+              final res = await portfolioProvider.addToPortfolio(
                 ticker: stock.symbol,
                 quantity: qty,
                 avgBuyPrice: price,
@@ -573,7 +518,9 @@ class _PortfolioState extends State<Portfolio>
                     backgroundColor: Colors.green,
                   ),
                 );
-                _refreshUserAssets();
+                await _firePortfolioNotificationsFromProvider(
+                  portfolioProvider,
+                );
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -581,7 +528,6 @@ class _PortfolioState extends State<Portfolio>
                     backgroundColor: Colors.red,
                   ),
                 );
-                setState(() => _isRefreshing = false);
               }
             },
             child: const Text('Add', style: TextStyle(color: Colors.white)),
@@ -834,6 +780,17 @@ class _PortfolioState extends State<Portfolio>
 
   @override
   Widget build(BuildContext context) {
+    final portfolioProvider = context.watch<PortfolioProvider>();
+    final isLoading = portfolioProvider.isLoading;
+    final isRefreshing = portfolioProvider.isRefreshing;
+    final hasError = portfolioProvider.hasError;
+    final portfolioStocks = portfolioProvider.portfolioRaw
+        .map((item) => _buildUIStockItem(item, isPortfolio: true))
+        .toList();
+    final watchlistStocks = portfolioProvider.watchlistRaw
+        .map((item) => _buildUIStockItem(item, isPortfolio: false))
+        .toList();
+
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? const Color(0xFF1A1A2E) : const Color(0xFFF2F4F7);
     final cardColor = isDark ? const Color(0xFF2A2D3E) : Colors.white;
@@ -869,11 +826,11 @@ class _PortfolioState extends State<Portfolio>
 
       bottomNavigationBar: const BottomNavBar(currentIndex: 2),
       body: SafeArea(
-        child: _isLoading
+        child: isLoading
             ? const Center(
                 child: CircularProgressIndicator(color: Color(0xFF0A3D62)),
               )
-            : _hasError
+            : hasError
             ? _buildNetworkError(textColor)
             : CustomScrollView(
                 slivers: [
@@ -970,7 +927,7 @@ class _PortfolioState extends State<Portfolio>
                   const SliverToBoxAdapter(child: SizedBox(height: 12)),
 
                   // ── Stock List (Portfolio) ──
-                  if (_isRefreshing && _shimmerController != null)
+                  if (isRefreshing && _shimmerController != null)
                     SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (_, __) => Padding(
@@ -984,7 +941,7 @@ class _PortfolioState extends State<Portfolio>
                         childCount: 3,
                       ),
                     )
-                  else if (_portfolioStocks.isEmpty)
+                  else if (portfolioStocks.isEmpty)
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
@@ -1021,7 +978,7 @@ class _PortfolioState extends State<Portfolio>
                     Builder(
                       builder: (context) {
                         final sorted = _getSorted(
-                          _portfolioStocks,
+                          portfolioStocks,
                           _portfolioSort,
                         );
                         return SliverList(
@@ -1177,7 +1134,7 @@ class _PortfolioState extends State<Portfolio>
                   const SliverToBoxAdapter(child: SizedBox(height: 12)),
 
                   // ── Watch List ──
-                  if (_isRefreshing && _shimmerController != null)
+                  if (isRefreshing && _shimmerController != null)
                     SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (_, __) => Padding(
@@ -1191,7 +1148,7 @@ class _PortfolioState extends State<Portfolio>
                         childCount: 3,
                       ),
                     )
-                  else if (_watchlistStocks.isEmpty)
+                  else if (watchlistStocks.isEmpty)
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
@@ -1228,7 +1185,7 @@ class _PortfolioState extends State<Portfolio>
                     Builder(
                       builder: (context) {
                         final sorted = _getSorted(
-                          _watchlistStocks,
+                          watchlistStocks,
                           _watchlistSort,
                         );
                         return SliverList(

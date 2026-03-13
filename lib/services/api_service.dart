@@ -21,7 +21,7 @@ String get host {
   }
 }
 
-String get baseUrl => "$host/api";
+String get baseUrl => "https://hybstockadvisor-ap.onrender.com/api";
 
 class ApiService {
   static final navigatorKey = GlobalKey<NavigatorState>();
@@ -75,8 +75,8 @@ class ApiService {
     final dio = Dio(
       BaseOptions(
         baseUrl: baseUrl,
-        connectTimeout: const Duration(seconds: 30),
-        receiveTimeout: const Duration(seconds: 30),
+        connectTimeout: const Duration(seconds: 60),
+        receiveTimeout: const Duration(seconds: 60),
         headers: {'Accept': 'application/json'},
       ),
     );
