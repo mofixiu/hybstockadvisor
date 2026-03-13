@@ -2,6 +2,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:provider/provider.dart';
+import 'package:hybstockadvisor/providers/market_data_provider.dart';
 import 'package:hybstockadvisor/widgets/ai_chat_sheet.dart';
 import 'package:hybstockadvisor/widgets/bottomNavBar.dart';
 import 'package:hybstockadvisor/services/api_service.dart';
@@ -58,7 +60,11 @@ class _AiInsightsState extends State<AiInsights>
         _hasError = false;
       });
     }
-    final response = await ApiService.getInsights(_ticker);
+    final response = await context.read<MarketDataProvider>().getInsights(
+      _ticker,
+    );
+
+    if (!mounted) return;
 
     if (response != null && response['status'] == 'success') {
       final data = response['data'];

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:hive/hive.dart';
+import 'package:provider/provider.dart';
+import 'package:hybstockadvisor/providers/profile_provider.dart';
 import 'package:hybstockadvisor/screens/auth/login.dart';
 import 'package:hybstockadvisor/screens/notification_settings.dart';
 import 'package:hybstockadvisor/screens/personal_info.dart';
@@ -17,65 +18,13 @@ class Profile extends StatefulWidget {
 }
 
 class _ProfileState extends State<Profile> {
-  String _fullName = 'Loading...';
-  String? _avatarPath;
-  String _investorTier = 'Investor';
-  IconData _tierIcon = Icons.person_outline;
-  Color _tierColor = const Color(0xFF888888);
-  Color _tierBgColor = const Color(0xFFE8E8E8);
-
   @override
   void initState() {
     super.initState();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    final box = await Hive.openBox('user');
-    final firstName = box.get('first_name', defaultValue: '');
-    final lastName = box.get('last_name', defaultValue: '');
-    final name = '$firstName $lastName'.trim();
-   
-
-    // Fetch portfolio to determine investor tier
-    String tier = 'Beginner Investor';
-    IconData icon = Icons.person_outline;
-    Color color = const Color(0xFF888888);
-    Color bgColor = const Color(0xFFE8E8E8);
-
-    try {
-      final data = await ApiService.getUserAssets();
-      if (data != null) {
-        final portfolioCount = (data['portfolio'] as List?)?.length ?? 0;
-        if (portfolioCount >= 5) {
-          tier = 'Premium Investor';
-          icon = Icons.verified;
-          color = const Color(0xFF0A3D62);
-          bgColor = const Color(0xFFEAF1FF);
-        } else if (portfolioCount >= 3) {
-          tier = 'Committed Investor';
-          icon = Icons.trending_up;
-          color = const Color(0xFF2DBD6E);
-          bgColor = const Color(0xFFD6F5E3);
-        } else if (portfolioCount >= 1) {
-          tier = 'Active Investor';
-          icon = Icons.show_chart;
-          color = const Color(0xFF2979FF);
-          bgColor = const Color(0xFFDCEAFF);
-        }
-      }
-    } catch (_) {}
-
-    if (mounted) {
-      setState(() {
-        if (name.isNotEmpty) _fullName = name;
-        _avatarPath = box.get('avatar_path');
-        _investorTier = tier;
-        _tierIcon = icon;
-        _tierColor = color;
-        _tierBgColor = bgColor;
-      });
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<ProfileProvider>().load();
+    });
   }
 
   @override
@@ -86,11 +35,13 @@ class _ProfileState extends State<Profile> {
   // Reload data when returning from PersonalInfo
   void _reloadOnReturn(BuildContext context, Widget page) async {
     await context.pushFade(page);
-    _loadData();
+    if (!mounted) return;
+    await this.context.read<ProfileProvider>().load(force: true);
   }
 
   @override
   Widget build(BuildContext context) {
+    final profileProvider = context.watch<ProfileProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? const Color(0xFF1A1A2E) : const Color(0xFFF2F4F7);
     final cardColor = isDark ? const Color(0xFF2A2D3E) : Colors.white;
@@ -142,9 +93,9 @@ class _ProfileState extends State<Profile> {
                             ],
                           ),
                           child: ClipOval(
-                            child: _avatarPath != null
+                            child: profileProvider.avatarPath != null
                                 ? Image.file(
-                                    File(_avatarPath!),
+                                    File(profileProvider.avatarPath!),
                                     fit: BoxFit.cover,
                                     errorBuilder: (_, __, ___) => Icon(
                                       Icons.person,
@@ -189,7 +140,7 @@ class _ProfileState extends State<Profile> {
 
                     // ── Name ──
                     Text(
-                      _fullName,
+                      profileProvider.fullName,
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
@@ -207,19 +158,23 @@ class _ProfileState extends State<Profile> {
                       ),
                       decoration: BoxDecoration(
                         color: isDark
-                            ? _tierColor.withOpacity(0.15)
-                            : _tierBgColor,
+                            ? profileProvider.tierColor.withOpacity(0.15)
+                            : profileProvider.tierBgColor,
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(_tierIcon, color: _tierColor, size: 16),
+                          Icon(
+                            profileProvider.tierIcon,
+                            color: profileProvider.tierColor,
+                            size: 16,
+                          ),
                           const SizedBox(width: 6),
                           Text(
-                            _investorTier,
+                            profileProvider.investorTier,
                             style: TextStyle(
-                              color: _tierColor,
+                              color: profileProvider.tierColor,
                               fontWeight: FontWeight.w600,
                               fontSize: 13,
                             ),

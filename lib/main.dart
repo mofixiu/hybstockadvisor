@@ -1,6 +1,8 @@
 // import 'package:hive/hive.dart';
 import 'package:hybstockadvisor/providers/theme_provider.dart';
+import 'package:hybstockadvisor/providers/market_data_provider.dart';
 import 'package:hybstockadvisor/providers/portfolio_provider.dart';
+import 'package:hybstockadvisor/providers/profile_provider.dart';
 import 'package:hybstockadvisor/services/api_service.dart';
 import 'package:hybstockadvisor/providers/notification_provider.dart';
 import 'package:hybstockadvisor/widgets/splash_screen.dart';
@@ -38,7 +40,9 @@ void main() async {
         ChangeNotifierProvider<NotificationProvider>.value(
           value: notificationProvider,
         ),
+        ChangeNotifierProvider(create: (_) => MarketDataProvider()),
         ChangeNotifierProvider(create: (_) => PortfolioProvider()),
+        ChangeNotifierProvider(create: (_) => ProfileProvider()),
         // ChangeNotifierProvider(create: (context) => UserProvider()),
         // ChangeNotifierProvider(create: (_) => HotelProvider()),
         // ChangeNotifierProvider(create: (_) => BookmarkProvider()),
