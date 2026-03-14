@@ -14,8 +14,8 @@ class _NotificationSettingsState extends State<NotificationSettings> {
   bool _aiForecast = true;
   bool _safetyIndex = true;
   // General toggles
-  bool _appUpdates = true;
-  bool _weeklySummary = false;
+  bool _appUpdates = false;
+  bool _weeklySummary = true;
 
   @override
   void initState() {
@@ -29,8 +29,8 @@ class _NotificationSettingsState extends State<NotificationSettings> {
       _priceMovement = box.get('notif_price_movement', defaultValue: true);
       _aiForecast = box.get('notif_ai_forecast', defaultValue: true);
       _safetyIndex = box.get('notif_safety_index', defaultValue: true);
-      _appUpdates = box.get('notif_app_updates', defaultValue: true);
-      _weeklySummary = box.get('notif_weekly_summary', defaultValue: false);
+      _appUpdates = box.get('notif_app_updates', defaultValue: false);
+      _weeklySummary = box.get('notif_weekly_summary', defaultValue: true);
     });
   }
 

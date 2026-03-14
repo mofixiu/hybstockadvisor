@@ -106,7 +106,7 @@ class _DashboardState extends State<Dashboard>
   }
 
   // 1. Fetch the entire market list first
-  Future<void> _fetchMarketSummaryAndStart() async {
+  Future<void> _fetchMarketSummaryAndStart({bool forceRefresh = false}) async {
     if (mounted) {
       setState(() {
         _isLoading = true;
@@ -116,7 +116,7 @@ class _DashboardState extends State<Dashboard>
 
     final summaryRes = await context
         .read<MarketDataProvider>()
-        .getMarketSummary();
+      .getMarketSummary(force: forceRefresh);
 
     if (!mounted) return;
 
@@ -182,14 +182,17 @@ class _DashboardState extends State<Dashboard>
     // 2. Fetch the AI Insights for the selected stock
     final selectedStock = _selectedStock;
     if (selectedStock != null) {
-      _fetchAIInsights(selectedStock.symbol);
+      _fetchAIInsights(selectedStock.symbol, forceRefresh: forceRefresh);
     }
 
     // 3. Fire notifications (capped at 7 per session, prioritized)
     _fireAllNotifications();
   }
 
-  Future<void> _fetchAIInsights(String ticker) async {
+  Future<void> _fetchAIInsights(
+    String ticker, {
+    bool forceRefresh = false,
+  }) async {
     if (!mounted) return;
     ApiService.currentTicker = ticker;
 
@@ -200,6 +203,7 @@ class _DashboardState extends State<Dashboard>
 
     final response = await context.read<MarketDataProvider>().getStockForecast(
       ticker,
+      force: forceRefresh,
     );
 
     if (!mounted) return;
@@ -299,7 +303,7 @@ class _DashboardState extends State<Dashboard>
     final bool notifPrice =
         box.get('notif_price_movement', defaultValue: true) == true;
     final bool notifWeekly =
-        box.get('notif_weekly_summary', defaultValue: false) == true;
+        box.get('notif_weekly_summary', defaultValue: true) == true;
 
     // Each candidate: (priority, title, body, type, ticker)
     final List<(int, String, String, NotificationType, String?)> candidates =
@@ -659,9 +663,12 @@ class _DashboardState extends State<Dashboard>
                           child: _buildNetworkError(textColor, () {
                             final selectedStock = _selectedStock;
                             if (selectedStock != null) {
-                              _fetchAIInsights(selectedStock.symbol);
+                              _fetchAIInsights(
+                                selectedStock.symbol,
+                                forceRefresh: true,
+                              );
                             } else {
-                              _fetchMarketSummaryAndStart();
+                              _fetchMarketSummaryAndStart(forceRefresh: true);
                             }
                           }),
                         )

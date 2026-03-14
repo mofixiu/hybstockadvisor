@@ -26,8 +26,9 @@ class PortfolioProvider extends ChangeNotifier {
   List<dynamic> get portfolioRaw => List.unmodifiable(_portfolioRaw);
   List<dynamic> get watchlistRaw => List.unmodifiable(_watchlistRaw);
 
-  Future<void> loadInitial() async {
+  Future<void> loadInitial({bool force = false}) async {
     final hasFreshAssetsCache =
+        !force &&
         _hasFetchedAssetsOnce &&
         _assetsLastFetchedAt != null &&
         DateTime.now().difference(_assetsLastFetchedAt!) < _assetsTtl;
@@ -64,7 +65,7 @@ class PortfolioProvider extends ChangeNotifier {
       }
     }
 
-    await refreshAssets(force: false, showRefreshing: false);
+    await refreshAssets(force: force, showRefreshing: false);
   }
 
   Future<bool> refreshAssets({
@@ -77,6 +78,7 @@ class PortfolioProvider extends ChangeNotifier {
       final age = DateTime.now().difference(_assetsLastFetchedAt!);
       if (age < _assetsTtl) {
         _isLoading = false;
+        _hasError = false;
         if (showRefreshing) _isRefreshing = false;
         notifyListeners();
         return true;
@@ -105,6 +107,7 @@ class PortfolioProvider extends ChangeNotifier {
     }
 
     _hasError = true;
+  _assetsLastFetchedAt = null;
     _isLoading = false;
     _isRefreshing = false;
     _isFetchingAssets = false;
@@ -186,5 +189,18 @@ class PortfolioProvider extends ChangeNotifier {
 
     await refreshAssets(force: true, showRefreshing: false);
     return res;
+  }
+
+  void resetForSessionChange() {
+    _isLoading = true;
+    _isRefreshing = false;
+    _hasError = false;
+    _isFetchingAssets = false;
+    _availableMarketStocks = [];
+    _portfolioRaw = [];
+    _watchlistRaw = [];
+    _hasFetchedAssetsOnce = false;
+    _assetsLastFetchedAt = null;
+    notifyListeners();
   }
 }

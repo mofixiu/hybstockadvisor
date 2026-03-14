@@ -3,6 +3,9 @@
 import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
+import 'package:hybstockadvisor/providers/notification_provider.dart';
+import 'package:hybstockadvisor/providers/portfolio_provider.dart';
+import 'package:hybstockadvisor/providers/profile_provider.dart';
 import 'package:hybstockadvisor/screens/auth/forgotPassword.dart';
 import 'package:hybstockadvisor/screens/auth/signup.dart';
 import 'package:hybstockadvisor/screens/dashboard.dart';
@@ -11,6 +14,7 @@ import 'package:hybstockadvisor/services/api_service.dart';
 import 'package:hybstockadvisor/themes/theme.dart';
 import 'package:hybstockadvisor/widgets/customButton.dart';
 import 'package:hybstockadvisor/widgets/custom_page_route.dart';
+import 'package:provider/provider.dart';
 
 class Login extends StatefulWidget {
   const Login({super.key});
@@ -96,8 +100,14 @@ class _LoginState extends State<Login> {
 
       // Save user data to Hive (For UI display)
       final userBox = await Hive.openBox('user');
+      await userBox.delete('avatar_path');
+      await userBox.delete('has_setup_portfolio');
       await userBox.put('first_name', firstName);
       await userBox.put('last_name', response['user_data']['last_name'] ?? '');
+
+      await context.read<NotificationProvider>().clearAll();
+      context.read<ProfileProvider>().resetForSessionChange();
+      context.read<PortfolioProvider>().resetForSessionChange();
 
       // ... keep the rest of your checking setup logic the exact same ...
       // Ask the database if they already have stocks
@@ -325,10 +335,7 @@ class _LoginState extends State<Login> {
                             controller: emailController,
                             validator: (value) {
                               if (value == null || value.trim().isEmpty) {
-                                return 'Please enter your email';
-                              }
-                              if (!value.contains('@')) {
-                                return 'Please enter a valid email';
+                                return 'Please enter your email or username';
                               }
                               return null;
                             },
@@ -342,7 +349,7 @@ class _LoginState extends State<Login> {
                               border: InputBorder.none,
                               errorStyle: TextStyle(fontSize: 0),
                             ),
-                            keyboardType: TextInputType.emailAddress,
+                            keyboardType: TextInputType.text, 
                             style: const TextStyle(
                               fontSize: 16,
                               color: Colors.black87,

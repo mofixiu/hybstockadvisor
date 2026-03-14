@@ -52,9 +52,23 @@ class _PortfolioState extends State<Portfolio>
     super.dispose();
   }
 
-  Future<void> _fetchInitialData() async {
+  Future<void> _fetchInitialData({bool forceRefresh = false}) async {
     final provider = context.read<PortfolioProvider>();
-    await provider.loadInitial();
+    await provider.loadInitial(force: forceRefresh);
+    if (!mounted) return;
+    await _firePortfolioNotificationsFromProvider(provider);
+  }
+
+  Future<void> _onRefreshPortfolio() async {
+    if (!mounted) return;
+    final provider = context.read<PortfolioProvider>();
+
+    if (provider.availableMarketStocks.isEmpty) {
+      await provider.loadInitial(force: true);
+    } else {
+      await provider.refreshAssets(force: true, showRefreshing: false);
+    }
+
     if (!mounted) return;
     await _firePortfolioNotificationsFromProvider(provider);
   }
@@ -215,6 +229,15 @@ class _PortfolioState extends State<Portfolio>
   }
 
   // ── Sort Sheet ──
+  void _showSortUnavailableMessage(String sectionLabel) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('No stocks in $sectionLabel yet. Add one first to sort.'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   void _showSortSheet({required bool isPortfolio}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? const Color(0xFF1A1A2E) : const Color(0xFFF2F4F7);
@@ -756,7 +779,7 @@ class _PortfolioState extends State<Portfolio>
             ),
             const SizedBox(height: 24),
             ElevatedButton(
-              onPressed: _fetchInitialData,
+              onPressed: () => _fetchInitialData(forceRefresh: true),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF0A3D62),
                 padding: const EdgeInsets.symmetric(
@@ -826,464 +849,493 @@ class _PortfolioState extends State<Portfolio>
 
       bottomNavigationBar: const BottomNavBar(currentIndex: 2),
       body: SafeArea(
-        child: hasError
-            ? _buildNetworkError(textColor)
-            : CustomScrollView(
-                slivers: [
-                  // ── Header ──
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Portfolio',
-                                style: TextStyle(
-                                  fontSize: 26,
-                                  fontWeight: FontWeight.bold,
-                                  color: textColor,
+        child: RefreshIndicator(
+          onRefresh: _onRefreshPortfolio,
+          child: hasError
+              ? ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: [
+                    SizedBox(
+                      height: MediaQuery.of(context).size.height * 0.75,
+                      child: _buildNetworkError(textColor),
+                    ),
+                  ],
+                )
+              : CustomScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
+                    // ── Header ──
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Portfolio',
+                                  style: TextStyle(
+                                    fontSize: 26,
+                                    fontWeight: FontWeight.bold,
+                                    color: textColor,
+                                  ),
+                                ),
+                                const Text(
+                                  'HybStockAdvisor',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Color(0xFF0A3D62),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const Spacer(),
+                            GestureDetector(
+                              onTap: () => _showAddActionSheet(isDark),
+                              child: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: cardColor,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.07),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(
+                                  Icons.add,
+                                  color: Color(0xFF0A3D62),
+                                  size: 22,
                                 ),
                               ),
-                              const Text(
-                                'HybStockAdvisor',
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SliverToBoxAdapter(child: SizedBox(height: 24)),
+
+                    // ── Your Stocks Header ──
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Your Stocks',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: textColor,
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () {
+                                if (portfolioStocks.isEmpty) {
+                                  _showSortUnavailableMessage('portfolio');
+                                  return;
+                                }
+                                _showSortSheet(isPortfolio: true);
+                              },
+                              child: const Text(
+                                'Sort by',
                                 style: TextStyle(
                                   fontSize: 13,
                                   color: Color(0xFF0A3D62),
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
-                            ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SliverToBoxAdapter(child: SizedBox(height: 12)),
+
+                    // ── Stock List (Portfolio) ──
+                    if ((isLoading || isRefreshing) &&
+                        _shimmerController != null)
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (_, __) => Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                            child: _ShimmerCard(
+                              animation: _shimmerController!,
+                              isDark: isDark,
+                              cardColor: cardColor,
+                            ),
                           ),
-                          const Spacer(),
-                          GestureDetector(
-                            onTap: () => _showAddActionSheet(isDark),
-                            child: Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: cardColor,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.07),
-                                    blurRadius: 6,
-                                    offset: const Offset(0, 2),
+                          childCount: 3,
+                        ),
+                      )
+                    else if (portfolioStocks.isEmpty)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 32,
+                          ),
+                          child: Center(
+                            child: Column(
+                              children: [
+                                Icon(
+                                  Icons.bar_chart_outlined,
+                                  size: 48,
+                                  color: Colors.grey[400],
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'No stocks in portfolio.',
+                                  style: TextStyle(color: Colors.grey[500]),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Tap + to add your first stock.',
+                                  style: TextStyle(
+                                    color: Colors.grey[400],
+                                    fontSize: 12,
                                   ),
-                                ],
-                              ),
-                              child: const Icon(
-                                Icons.add,
-                                color: Color(0xFF0A3D62),
-                                size: 22,
-                              ),
+                                ),
+                              ],
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
-
-                  // ── Your Stocks Header ──
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Your Stocks',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: textColor,
-                            ),
-                          ),
-                          GestureDetector(
-                            onTap: () => _showSortSheet(isPortfolio: true),
-                            child: const Text(
-                              'Sort by',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Color(0xFF0A3D62),
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  const SliverToBoxAdapter(child: SizedBox(height: 12)),
-
-                  // ── Stock List (Portfolio) ──
-                  if ((isLoading || isRefreshing) && _shimmerController != null)
-                    SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (_, __) => Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-                          child: _ShimmerCard(
-                            animation: _shimmerController!,
-                            isDark: isDark,
-                            cardColor: cardColor,
                           ),
                         ),
-                        childCount: 3,
+                      )
+                    else
+                      Builder(
+                        builder: (context) {
+                          final sorted = _getSorted(
+                            portfolioStocks,
+                            _portfolioSort,
+                          );
+                          return SliverList(
+                            delegate: SliverChildBuilderDelegate((
+                              context,
+                              index,
+                            ) {
+                              final stock = sorted[index];
+                              return Dismissible(
+                                key: ValueKey('portfolio_${stock.symbol}'),
+                                direction: DismissDirection.endToStart,
+                                confirmDismiss: (_) async {
+                                  return await showDialog<bool>(
+                                        context: context,
+                                        builder: (ctx) => AlertDialog(
+                                          backgroundColor: cardColor,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              16,
+                                            ),
+                                          ),
+                                          title: Text(
+                                            'Remove ${stock.symbol}?',
+                                            style: TextStyle(color: textColor),
+                                          ),
+                                          content: Text(
+                                            'Remove ${stock.name} from your portfolio?',
+                                            style: TextStyle(
+                                              color: Colors.grey[500],
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(ctx, false),
+                                              child: Text(
+                                                'Cancel',
+                                                style: TextStyle(
+                                                  color: Colors.grey[500],
+                                                ),
+                                              ),
+                                            ),
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(ctx, true),
+                                              child: const Text(
+                                                'Remove',
+                                                style: TextStyle(
+                                                  color: Colors.red,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ) ??
+                                      false;
+                                },
+                                onDismissed: (_) =>
+                                    _removePortfolioItem(stock.symbol),
+                                background: Container(
+                                  margin: const EdgeInsets.fromLTRB(
+                                    20,
+                                    0,
+                                    20,
+                                    10,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withOpacity(0.85),
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  alignment: Alignment.centerRight,
+                                  padding: const EdgeInsets.only(right: 20),
+                                  child: const Icon(
+                                    Icons.delete_outline,
+                                    color: Colors.white,
+                                    size: 26,
+                                  ),
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    20,
+                                    0,
+                                    20,
+                                    10,
+                                  ),
+                                  child: _StockCard(
+                                    stock: stock,
+                                    isDark: isDark,
+                                    cardColor: cardColor,
+                                    textColor: textColor,
+                                    // 🚨 NEW: Trigger the bottom sheet!
+                                    onTap: () {
+                                      if (stock.quantity != null) {
+                                        _showPortfolioDetailsSheet(
+                                          stock,
+                                          isDark,
+                                        );
+                                      }
+                                    },
+                                  ),
+                                ),
+                                // child: Padding(
+                                //   padding: const EdgeInsets.fromLTRB(
+                                //     20,
+                                //     0,
+                                //     20,
+                                //     10,
+                                //   ),
+                                //   child: _StockCard(
+                                //     stock: stock,
+                                //     isDark: isDark,
+                                //     cardColor: cardColor,
+                                //     textColor: textColor,
+                                //   ),
+                                // ),
+                              );
+                            }, childCount: sorted.length),
+                          );
+                        },
                       ),
-                    )
-                  else if (portfolioStocks.isEmpty)
+
+                    const SliverToBoxAdapter(child: SizedBox(height: 24)),
+
+                    // ── Your Watchlist Header ──
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 32,
-                        ),
-                        child: Center(
-                          child: Column(
-                            children: [
-                              Icon(
-                                Icons.bar_chart_outlined,
-                                size: 48,
-                                color: Colors.grey[400],
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                'No stocks in portfolio.',
-                                style: TextStyle(color: Colors.grey[500]),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                'Tap + to add your first stock.',
-                                style: TextStyle(
-                                  color: Colors.grey[400],
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    )
-                  else
-                    Builder(
-                      builder: (context) {
-                        final sorted = _getSorted(
-                          portfolioStocks,
-                          _portfolioSort,
-                        );
-                        return SliverList(
-                          delegate: SliverChildBuilderDelegate((
-                            context,
-                            index,
-                          ) {
-                            final stock = sorted[index];
-                            return Dismissible(
-                              key: ValueKey('portfolio_${stock.symbol}'),
-                              direction: DismissDirection.endToStart,
-                              confirmDismiss: (_) async {
-                                return await showDialog<bool>(
-                                      context: context,
-                                      builder: (ctx) => AlertDialog(
-                                        backgroundColor: cardColor,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            16,
-                                          ),
-                                        ),
-                                        title: Text(
-                                          'Remove ${stock.symbol}?',
-                                          style: TextStyle(color: textColor),
-                                        ),
-                                        content: Text(
-                                          'Remove ${stock.name} from your portfolio?',
-                                          style: TextStyle(
-                                            color: Colors.grey[500],
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () =>
-                                                Navigator.pop(ctx, false),
-                                            child: Text(
-                                              'Cancel',
-                                              style: TextStyle(
-                                                color: Colors.grey[500],
-                                              ),
-                                            ),
-                                          ),
-                                          TextButton(
-                                            onPressed: () =>
-                                                Navigator.pop(ctx, true),
-                                            child: const Text(
-                                              'Remove',
-                                              style: TextStyle(
-                                                color: Colors.red,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ) ??
-                                    false;
-                              },
-                              onDismissed: (_) =>
-                                  _removePortfolioItem(stock.symbol),
-                              background: Container(
-                                margin: const EdgeInsets.fromLTRB(
-                                  20,
-                                  0,
-                                  20,
-                                  10,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.red.withOpacity(0.85),
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                alignment: Alignment.centerRight,
-                                padding: const EdgeInsets.only(right: 20),
-                                child: const Icon(
-                                  Icons.delete_outline,
-                                  color: Colors.white,
-                                  size: 26,
-                                ),
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  20,
-                                  0,
-                                  20,
-                                  10,
-                                ),
-                                child: _StockCard(
-                                  stock: stock,
-                                  isDark: isDark,
-                                  cardColor: cardColor,
-                                  textColor: textColor,
-                                  // 🚨 NEW: Trigger the bottom sheet!
-                                  onTap: () {
-                                    if (stock.quantity != null) {
-                                      _showPortfolioDetailsSheet(stock, isDark);
-                                    }
-                                  },
-                                ),
-                              ),
-                              // child: Padding(
-                              //   padding: const EdgeInsets.fromLTRB(
-                              //     20,
-                              //     0,
-                              //     20,
-                              //     10,
-                              //   ),
-                              //   child: _StockCard(
-                              //     stock: stock,
-                              //     isDark: isDark,
-                              //     cardColor: cardColor,
-                              //     textColor: textColor,
-                              //   ),
-                              // ),
-                            );
-                          }, childCount: sorted.length),
-                        );
-                      },
-                    ),
-
-                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
-
-                  // ── Your Watchlist Header ──
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Your Watchlist',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: textColor,
-                            ),
-                          ),
-                          GestureDetector(
-                            onTap: () => _showSortSheet(isPortfolio: false),
-                            child: const Text(
-                              'Sort by',
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Your Watchlist',
                               style: TextStyle(
-                                fontSize: 13,
-                                color: Color(0xFF0A3D62),
-                                fontWeight: FontWeight.w500,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: textColor,
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  const SliverToBoxAdapter(child: SizedBox(height: 12)),
-
-                  // ── Watch List ──
-                  if ((isLoading || isRefreshing) && _shimmerController != null)
-                    SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (_, __) => Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-                          child: _ShimmerCard(
-                            animation: _shimmerController!,
-                            isDark: isDark,
-                            cardColor: cardColor,
-                          ),
-                        ),
-                        childCount: 3,
-                      ),
-                    )
-                  else if (watchlistStocks.isEmpty)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 32,
-                        ),
-                        child: Center(
-                          child: Column(
-                            children: [
-                              Icon(
-                                Icons.visibility_off,
-                                size: 48,
-                                color: Colors.grey[400],
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                'Watchlist is empty.',
-                                style: TextStyle(color: Colors.grey[500]),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                'Tap + to add your first stock.',
-                                style: TextStyle(
-                                  color: Colors.grey[400],
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    )
-                  else
-                    Builder(
-                      builder: (context) {
-                        final sorted = _getSorted(
-                          watchlistStocks,
-                          _watchlistSort,
-                        );
-                        return SliverList(
-                          delegate: SliverChildBuilderDelegate((
-                            context,
-                            index,
-                          ) {
-                            final stock = sorted[index];
-                            return Dismissible(
-                              key: ValueKey('watchlist_${stock.symbol}'),
-                              direction: DismissDirection.endToStart,
-                              confirmDismiss: (_) async {
-                                return await showDialog<bool>(
-                                      context: context,
-                                      builder: (ctx) => AlertDialog(
-                                        backgroundColor: cardColor,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            16,
-                                          ),
-                                        ),
-                                        title: Text(
-                                          'Remove ${stock.symbol}?',
-                                          style: TextStyle(color: textColor),
-                                        ),
-                                        content: Text(
-                                          'Remove ${stock.name} from your watchlist?',
-                                          style: TextStyle(
-                                            color: Colors.grey[500],
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () =>
-                                                Navigator.pop(ctx, false),
-                                            child: Text(
-                                              'Cancel',
-                                              style: TextStyle(
-                                                color: Colors.grey[500],
-                                              ),
-                                            ),
-                                          ),
-                                          TextButton(
-                                            onPressed: () =>
-                                                Navigator.pop(ctx, true),
-                                            child: const Text(
-                                              'Remove',
-                                              style: TextStyle(
-                                                color: Colors.red,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ) ??
-                                    false;
+                            GestureDetector(
+                              onTap: () {
+                                if (watchlistStocks.isEmpty) {
+                                  _showSortUnavailableMessage('watchlist');
+                                  return;
+                                }
+                                _showSortSheet(isPortfolio: false);
                               },
-                              onDismissed: (_) =>
-                                  _removeWatchlistItem(stock.symbol),
-                              background: Container(
-                                margin: const EdgeInsets.fromLTRB(
-                                  20,
-                                  0,
-                                  20,
-                                  10,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.red.withOpacity(0.85),
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                alignment: Alignment.centerRight,
-                                padding: const EdgeInsets.only(right: 20),
-                                child: const Icon(
-                                  Icons.delete_outline,
-                                  color: Colors.white,
-                                  size: 26,
+                              child: const Text(
+                                'Sort by',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Color(0xFF0A3D62),
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
-                              child: Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  20,
-                                  0,
-                                  20,
-                                  10,
-                                ),
-                                child: _StockCard(
-                                  stock: stock,
-                                  isDark: isDark,
-                                  cardColor: cardColor,
-                                  textColor: textColor,
-                                ),
-                              ),
-                            );
-                          }, childCount: sorted.length),
-                        );
-                      },
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
 
-                  const SliverToBoxAdapter(child: SizedBox(height: 30)),
-                ],
-              ),
+                    const SliverToBoxAdapter(child: SizedBox(height: 12)),
+
+                    // ── Watch List ──
+                    if ((isLoading || isRefreshing) &&
+                        _shimmerController != null)
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (_, __) => Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                            child: _ShimmerCard(
+                              animation: _shimmerController!,
+                              isDark: isDark,
+                              cardColor: cardColor,
+                            ),
+                          ),
+                          childCount: 3,
+                        ),
+                      )
+                    else if (watchlistStocks.isEmpty)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 32,
+                          ),
+                          child: Center(
+                            child: Column(
+                              children: [
+                                Icon(
+                                  Icons.visibility_off,
+                                  size: 48,
+                                  color: Colors.grey[400],
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'Watchlist is empty.',
+                                  style: TextStyle(color: Colors.grey[500]),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Tap + to add your first stock.',
+                                  style: TextStyle(
+                                    color: Colors.grey[400],
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      Builder(
+                        builder: (context) {
+                          final sorted = _getSorted(
+                            watchlistStocks,
+                            _watchlistSort,
+                          );
+                          return SliverList(
+                            delegate: SliverChildBuilderDelegate((
+                              context,
+                              index,
+                            ) {
+                              final stock = sorted[index];
+                              return Dismissible(
+                                key: ValueKey('watchlist_${stock.symbol}'),
+                                direction: DismissDirection.endToStart,
+                                confirmDismiss: (_) async {
+                                  return await showDialog<bool>(
+                                        context: context,
+                                        builder: (ctx) => AlertDialog(
+                                          backgroundColor: cardColor,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              16,
+                                            ),
+                                          ),
+                                          title: Text(
+                                            'Remove ${stock.symbol}?',
+                                            style: TextStyle(color: textColor),
+                                          ),
+                                          content: Text(
+                                            'Remove ${stock.name} from your watchlist?',
+                                            style: TextStyle(
+                                              color: Colors.grey[500],
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(ctx, false),
+                                              child: Text(
+                                                'Cancel',
+                                                style: TextStyle(
+                                                  color: Colors.grey[500],
+                                                ),
+                                              ),
+                                            ),
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(ctx, true),
+                                              child: const Text(
+                                                'Remove',
+                                                style: TextStyle(
+                                                  color: Colors.red,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ) ??
+                                      false;
+                                },
+                                onDismissed: (_) =>
+                                    _removeWatchlistItem(stock.symbol),
+                                background: Container(
+                                  margin: const EdgeInsets.fromLTRB(
+                                    20,
+                                    0,
+                                    20,
+                                    10,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withOpacity(0.85),
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  alignment: Alignment.centerRight,
+                                  padding: const EdgeInsets.only(right: 20),
+                                  child: const Icon(
+                                    Icons.delete_outline,
+                                    color: Colors.white,
+                                    size: 26,
+                                  ),
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    20,
+                                    0,
+                                    20,
+                                    10,
+                                  ),
+                                  child: _StockCard(
+                                    stock: stock,
+                                    isDark: isDark,
+                                    cardColor: cardColor,
+                                    textColor: textColor,
+                                  ),
+                                ),
+                              );
+                            }, childCount: sorted.length),
+                          );
+                        },
+                      ),
+
+                    const SliverToBoxAdapter(child: SizedBox(height: 30)),
+                  ],
+                ),
+        ),
       ),
     );
   }

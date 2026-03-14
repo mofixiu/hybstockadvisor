@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:hybstockadvisor/providers/notification_provider.dart';
+import 'package:hybstockadvisor/providers/portfolio_provider.dart';
 import 'package:hybstockadvisor/providers/profile_provider.dart';
 import 'package:hybstockadvisor/screens/auth/login.dart';
 import 'package:hybstockadvisor/screens/notification_settings.dart';
@@ -19,6 +21,11 @@ class Profile extends StatefulWidget {
 
 class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
   AnimationController? _shimmerController;
+
+  Future<void> _onRefreshProfile() async {
+    if (!mounted) return;
+    await context.read<ProfileProvider>().load(force: true);
+  }
 
   @override
   void initState() {
@@ -127,10 +134,13 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
           children: [
             // ── App Bar ──
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  children: [
+              child: RefreshIndicator(
+                onRefresh: _onRefreshProfile,
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    children: [
                     const SizedBox(height: 10),
 
                     // ── Avatar ──
@@ -447,6 +457,16 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
                           );
 
                           if (confirm == true && context.mounted) {
+                            await context
+                                .read<NotificationProvider>()
+                                .clearAll();
+                            context
+                                .read<ProfileProvider>()
+                                .resetForSessionChange();
+                            context
+                                .read<PortfolioProvider>()
+                                .resetForSessionChange();
+
                             // Clear all saved user data & token
                             await ApiService.clearUserData();
 
@@ -491,8 +511,9 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
                       style: TextStyle(fontSize: 12, color: Colors.grey[400]),
                     ),
 
-                    const SizedBox(height: 20),
-                  ],
+                      const SizedBox(height: 20),
+                    ],
+                  ),
                 ),
               ),
             ),

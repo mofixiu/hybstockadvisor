@@ -105,4 +105,18 @@ class ProfileProvider extends ChangeNotifier {
     _lastFetchedAt = null;
     _inFlight = null;
   }
+
+  void resetForSessionChange() {
+    _fullName = 'Loading...';
+    _avatarPath = null;
+    _investorTier = 'Beginner Investor';
+    _tierIcon = Icons.person_outline;
+    _tierColor = const Color(0xFF888888);
+    _tierBgColor = const Color(0xFFE8E8E8);
+    _isLoading = false;
+    _hasError = false;
+    _lastFetchedAt = null;
+    _inFlight = null;
+    notifyListeners();
+  }
 }
