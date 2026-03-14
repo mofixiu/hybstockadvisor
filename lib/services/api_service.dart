@@ -75,8 +75,8 @@ class ApiService {
     final dio = Dio(
       BaseOptions(
         baseUrl: baseUrl,
-        connectTimeout: const Duration(seconds: 60),
-        receiveTimeout: const Duration(seconds: 60),
+        connectTimeout: const Duration(seconds: 150),
+        receiveTimeout: const Duration(seconds: 150),
         headers: {'Accept': 'application/json'},
       ),
     );
@@ -109,9 +109,11 @@ class ApiService {
               final authBox = await Hive.openBox('auth');
               final userBox = await Hive.openBox('user');
               final chatBox = await Hive.openBox('chat_history');
+              final notificationsBox = await Hive.openBox('notifications');
               await authBox.clear();
               await userBox.clear();
               await chatBox.clear();
+              await notificationsBox.clear();
 
               navigatorKey.currentState?.pushAndRemoveUntil(
                 MaterialPageRoute(builder: (_) => const Login()),
@@ -197,6 +199,8 @@ class ApiService {
       await userBox.clear();
       final chatBox = await Hive.openBox('chat_history');
       await chatBox.clear();
+      final notificationsBox = await Hive.openBox('notifications');
+      await notificationsBox.clear();
       log('User data cleared');
     } catch (e) {
       log('Error clearing user data: $e');
@@ -258,14 +262,14 @@ class ApiService {
   // --- AUTHENTICATION METHODS ---
 
   static Future<Map<String, dynamic>> login(
-    String email,
+    String identifier,
     String password,
   ) async {
     try {
-      log('📡 Attempting Login for: $email');
+      log('📡 Attempting Login for: $identifier');
       final response = await _dio.post(
         '/auth/login',
-        data: {'email': email.trim(), 'password': password},
+        data: {'identifier': identifier.trim(), 'password': password},
       );
       return response.data;
     } on DioException catch (e) {
@@ -291,7 +295,7 @@ class ApiService {
     Map<String, dynamic> userData,
   ) async {
     try {
-      log('📡 Attempting Registration for: ${userData['email']}');
+      log('📡 Attempting Registration for: ${userData['identifier']}');
       final response = await _dio.post('/auth/register', data: userData);
       return response.data;
     } on DioException catch (e) {

@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hybstockadvisor/services/api_service.dart';
 
 class MarketDataProvider extends ChangeNotifier {
-  static const Duration ttl = Duration(minutes: 5);
+  static const Duration ttl = Duration(minutes: 15);
 
   final Map<String, Map<String, dynamic>?> _cache = {};
   final Map<String, DateTime> _cacheTime = {};
