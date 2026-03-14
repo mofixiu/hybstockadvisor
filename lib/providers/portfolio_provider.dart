@@ -12,9 +12,10 @@ class PortfolioProvider extends ChangeNotifier {
   List<NigerianStock> _availableMarketStocks = [];
   List<dynamic> _portfolioRaw = [];
   List<dynamic> _watchlistRaw = [];
+  bool _hasFetchedAssetsOnce = false;
 
   DateTime? _assetsLastFetchedAt;
-  static const Duration _assetsTtl = Duration(seconds: 30);
+  static const Duration _assetsTtl = Duration(minutes: 30);
 
   bool get isLoading => _isLoading;
   bool get isRefreshing => _isRefreshing;
@@ -26,29 +27,44 @@ class PortfolioProvider extends ChangeNotifier {
   List<dynamic> get watchlistRaw => List.unmodifiable(_watchlistRaw);
 
   Future<void> loadInitial() async {
+    final hasFreshAssetsCache =
+        _hasFetchedAssetsOnce &&
+        _assetsLastFetchedAt != null &&
+        DateTime.now().difference(_assetsLastFetchedAt!) < _assetsTtl;
+    final hasMarketCache = _availableMarketStocks.isNotEmpty;
+
+    if (hasFreshAssetsCache && hasMarketCache) {
+      _isLoading = false;
+      _hasError = false;
+      notifyListeners();
+      return;
+    }
+
     _isLoading = true;
     _hasError = false;
     notifyListeners();
 
-    final summaryRes = await ApiService.getMarketSummary();
-    if (summaryRes != null && summaryRes['status'] == 'success') {
-      final List<dynamic> rawList = summaryRes['data'];
-      _availableMarketStocks = rawList.map((item) {
-        final String sym = item['symbol'];
-        return NigerianStock(
-          symbol: sym,
-          name: item['name'] ?? '$sym Plc',
-          marketCap: item['market_cap'] ?? '--',
-          price: (item['price'] as num).toDouble(),
-          change:
-              '${(item['change_pct'] as num).toDouble() >= 0 ? '+' : ''}${(item['change_pct'] as num).toDouble().toStringAsFixed(2)}%',
-        );
-      }).toList();
-    } else {
-      _availableMarketStocks = [];
+    if (!hasMarketCache) {
+      final summaryRes = await ApiService.getMarketSummary();
+      if (summaryRes != null && summaryRes['status'] == 'success') {
+        final List<dynamic> rawList = summaryRes['data'];
+        _availableMarketStocks = rawList.map((item) {
+          final String sym = item['symbol'];
+          return NigerianStock(
+            symbol: sym,
+            name: item['name'] ?? '$sym Plc',
+            marketCap: item['market_cap'] ?? '--',
+            price: (item['price'] as num).toDouble(),
+            change:
+                '${(item['change_pct'] as num).toDouble() >= 0 ? '+' : ''}${(item['change_pct'] as num).toDouble().toStringAsFixed(2)}%',
+          );
+        }).toList();
+      } else {
+        _availableMarketStocks = [];
+      }
     }
 
-    await refreshAssets(force: true, showRefreshing: false);
+    await refreshAssets(force: false, showRefreshing: false);
   }
 
   Future<bool> refreshAssets({
@@ -78,6 +94,7 @@ class PortfolioProvider extends ChangeNotifier {
     if (data != null) {
       _portfolioRaw = List<dynamic>.from(data['portfolio'] as List? ?? []);
       _watchlistRaw = List<dynamic>.from(data['watchlist'] as List? ?? []);
+      _hasFetchedAssetsOnce = true;
       _assetsLastFetchedAt = DateTime.now();
       _hasError = false;
       _isLoading = false;
