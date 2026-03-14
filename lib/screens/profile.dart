@@ -17,10 +17,17 @@ class Profile extends StatefulWidget {
   State<Profile> createState() => _ProfileState();
 }
 
-class _ProfileState extends State<Profile> {
+class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
+  AnimationController? _shimmerController;
+
   @override
   void initState() {
     super.initState();
+    _shimmerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.read<ProfileProvider>().load();
@@ -28,20 +35,71 @@ class _ProfileState extends State<Profile> {
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
+  void dispose() {
+    _shimmerController?.dispose();
+    super.dispose();
   }
 
   // Reload data when returning from PersonalInfo
   void _reloadOnReturn(BuildContext context, Widget page) async {
-    await context.pushFade(page);
+    final didSave = await this.context.pushFade<bool>(page);
     if (!mounted) return;
-    await this.context.read<ProfileProvider>().load(force: true);
+    if (didSave == true) {
+      await this.context.read<ProfileProvider>().load(force: true);
+    }
+  }
+
+  Widget _buildShimmerBox({
+    required bool isDark,
+    required double width,
+    required double height,
+    double radius = 8,
+    BoxShape shape = BoxShape.rectangle,
+  }) {
+    if (_shimmerController == null) {
+      return SizedBox(width: width, height: height);
+    }
+
+    final baseColor = isDark
+        ? const Color(0xFF2A2D3E)
+        : const Color(0xFFE0E0E0);
+    final highlightColor = isDark
+        ? const Color(0xFF3A3D4E)
+        : const Color(0xFFF5F5F5);
+
+    return AnimatedBuilder(
+      animation: _shimmerController!,
+      builder: (context, _) {
+        final shimmer = LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [baseColor, highlightColor, baseColor],
+          stops: [
+            (_shimmerController!.value - 0.3).clamp(0.0, 1.0),
+            _shimmerController!.value.clamp(0.0, 1.0),
+            (_shimmerController!.value + 0.3).clamp(0.0, 1.0),
+          ],
+        );
+
+        return Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            shape: shape,
+            gradient: shimmer,
+            borderRadius: shape == BoxShape.circle
+                ? null
+                : BorderRadius.circular(radius),
+          ),
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final profileProvider = context.watch<ProfileProvider>();
+    final isProfileLoading = profileProvider.isLoading;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? const Color(0xFF1A1A2E) : const Color(0xFFF2F4F7);
     final cardColor = isDark ? const Color(0xFF2A2D3E) : Colors.white;
@@ -93,25 +151,32 @@ class _ProfileState extends State<Profile> {
                             ],
                           ),
                           child: ClipOval(
-                            child: profileProvider.avatarPath != null
-                                ? Image.file(
-                                    File(profileProvider.avatarPath!),
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => Icon(
-                                      Icons.person,
-                                      size: 60,
-                                      color: Colors.grey[400],
-                                    ),
+                            child: isProfileLoading
+                                ? _buildShimmerBox(
+                                    isDark: isDark,
+                                    width: 110,
+                                    height: 110,
+                                    shape: BoxShape.circle,
                                   )
-                                : Image.asset(
-                                    'assets/images/avatar.png',
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => Icon(
-                                      Icons.person,
-                                      size: 60,
-                                      color: Colors.grey[400],
-                                    ),
-                                  ),
+                                : (profileProvider.avatarPath != null
+                                      ? Image.file(
+                                          File(profileProvider.avatarPath!),
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) => Icon(
+                                            Icons.person,
+                                            size: 60,
+                                            color: Colors.grey[400],
+                                          ),
+                                        )
+                                      : Image.asset(
+                                          'assets/images/avatar.png',
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) => Icon(
+                                            Icons.person,
+                                            size: 60,
+                                            color: Colors.grey[400],
+                                          ),
+                                        )),
                           ),
                         ),
                         // Green checkmark badge
@@ -139,49 +204,65 @@ class _ProfileState extends State<Profile> {
                     const SizedBox(height: 14),
 
                     // ── Name ──
-                    Text(
-                      profileProvider.fullName,
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: textColor,
+                    if (isProfileLoading)
+                      _buildShimmerBox(
+                        isDark: isDark,
+                        width: 190,
+                        height: 26,
+                        radius: 8,
+                      )
+                    else
+                      Text(
+                        profileProvider.fullName,
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: textColor,
+                        ),
                       ),
-                    ),
 
                     const SizedBox(height: 8),
 
                     // ── Investor Badge (dynamic) ──
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? profileProvider.tierColor.withOpacity(0.15)
-                            : profileProvider.tierBgColor,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            profileProvider.tierIcon,
-                            color: profileProvider.tierColor,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            profileProvider.investorTier,
-                            style: TextStyle(
+                    if (isProfileLoading)
+                      _buildShimmerBox(
+                        isDark: isDark,
+                        width: 160,
+                        height: 30,
+                        radius: 20,
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? profileProvider.tierColor.withOpacity(0.15)
+                              : profileProvider.tierBgColor,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              profileProvider.tierIcon,
                               color: profileProvider.tierColor,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
+                              size: 16,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 6),
+                            Text(
+                              profileProvider.investorTier,
+                              style: TextStyle(
+                                color: profileProvider.tierColor,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
 
                     const SizedBox(height: 24),
 

@@ -203,7 +203,7 @@ class _PersonalInfoState extends State<PersonalInfo> {
           backgroundColor: Colors.green,
         ),
       );
-      Navigator.pop(context);
+      Navigator.pop(context, true);
     }
   }
 
