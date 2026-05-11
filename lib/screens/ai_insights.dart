@@ -7,6 +7,7 @@ import 'package:hybstockadvisor/providers/market_data_provider.dart';
 import 'package:hybstockadvisor/widgets/ai_chat_sheet.dart';
 import 'package:hybstockadvisor/widgets/bottomNavBar.dart';
 import 'package:hybstockadvisor/services/api_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class AiInsights extends StatefulWidget {
   const AiInsights({super.key});
@@ -51,6 +52,26 @@ class _AiInsightsState extends State<AiInsights>
   void dispose() {
     _shimmerController?.dispose();
     super.dispose();
+  }
+
+  Future<void> _launchBamboo() async {
+    final Uri url = Uri.parse('https://app.investbamboo.com/');
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(
+          url,
+          mode: LaunchMode.inAppWebView,
+        );
+      } else {
+        throw 'Could not launch $url';
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Could not open brokerage platform.")),
+        );
+      }
+    }
   }
 
   Future<void> _fetchInsights() async {
@@ -461,6 +482,33 @@ class _AiInsightsState extends State<AiInsights>
                                   ),
                                 ),
                               ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 24),
+
+                          // ── Execute Trade Button ──
+                          SizedBox(
+                            width: double.infinity,
+                            height: 54,
+                            child: ElevatedButton.icon(
+                              onPressed: _launchBamboo,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF0A3D62),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                elevation: 0,
+                              ),
+                              icon: const Icon(Icons.account_balance, size: 20),
+                              label: const Text(
+                                'Execute on Bamboo',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
                           ),
 

@@ -15,6 +15,7 @@ import 'package:hybstockadvisor/providers/notification_provider.dart';
 import 'package:hybstockadvisor/services/api_service.dart';
 import 'package:hybstockadvisor/widgets/custom_page_route.dart';
 import 'package:hybstockadvisor/widgets/stock_logo.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // ─────────────────────────────────────────────
 // Stock Data Model
@@ -116,7 +117,7 @@ class _DashboardState extends State<Dashboard>
 
     final summaryRes = await context
         .read<MarketDataProvider>()
-      .getMarketSummary(force: forceRefresh);
+        .getMarketSummary(force: forceRefresh);
 
     if (!mounted) return;
 
@@ -575,6 +576,26 @@ class _DashboardState extends State<Dashboard>
     }
   }
 
+  Future<void> _launchBamboo() async {
+    final Uri url = Uri.parse('https://app.investbamboo.com/');
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(
+          url,
+          mode: LaunchMode.inAppWebView,
+        );
+      } else {
+        throw 'Could not launch $url';
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Could not open brokerage platform.")),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -688,6 +709,7 @@ class _DashboardState extends State<Dashboard>
                             ),
                           ),
                         ),
+                      
                         const SizedBox(height: 20),
                         _buildCurrentPriceCard(isDark),
                         const SizedBox(height: 16),

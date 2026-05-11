@@ -21,7 +21,7 @@ String get host {
   }
 }
 
-String get baseUrl => "https://hybstockadvisor-ap.onrender.com/api";
+String get baseUrl => "https://hybstockadvisor-us.onrender.com/api";
 
 class ApiService {
   static final navigatorKey = GlobalKey<NavigatorState>();

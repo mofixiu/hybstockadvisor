@@ -107,7 +107,7 @@ class PortfolioProvider extends ChangeNotifier {
     }
 
     _hasError = true;
-  _assetsLastFetchedAt = null;
+    _assetsLastFetchedAt = null;
     _isLoading = false;
     _isRefreshing = false;
     _isFetchingAssets = false;
