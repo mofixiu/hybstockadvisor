@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_notification.dart';
 import '../providers/notification_provider.dart';
+import '../widgets/ai_chat_sheet.dart';
 
 class NotificationCenter extends StatelessWidget {
   const NotificationCenter({super.key});
@@ -112,102 +113,137 @@ class NotificationCenter extends StatelessWidget {
                     duration: const Duration(milliseconds: 200),
                     decoration: BoxDecoration(
                       color: notif.isRead
-                          ? cardColor.withOpacity(0.6)
+                          ? cardColor.withOpacity(0.7)
                           : cardColor,
-                      borderRadius: BorderRadius.circular(14),
-                      border: notif.isRead
-                          ? null
-                          : Border.all(
-                              color: const Color(0xFF0A3D62).withOpacity(0.3),
-                              width: 1,
-                            ),
-                      boxShadow: notif.isRead
-                          ? null
-                          : [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
-                              )
-                            ],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isDark
+                            ? Colors.white10
+                            : Colors.black.withOpacity(0.05),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.06),
+                          blurRadius: 12,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Row(
+                      padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Icon
-                          Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: _iconBgColor(notif.type)
-                                  .withOpacity(0.12),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              _iconForType(notif.type),
-                              color: _iconBgColor(notif.type),
-                              size: 20,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          // Text
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: _iconBgColor(notif.type)
+                                      .withOpacity(0.12),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  _iconForType(notif.type),
+                                  color: _iconBgColor(notif.type),
+                                  size: 20,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Expanded(
-                                      child: Text(
-                                        notif.title,
-                                        style: TextStyle(
-                                          color: notif.isRead
-                                              ? textColor.withOpacity(0.55)
-                                              : textColor,
-                                          fontWeight: notif.isRead
-                                              ? FontWeight.w500
-                                              : FontWeight.bold,
-                                          fontSize: 14,
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            notif.title,
+                                            style: TextStyle(
+                                              color: notif.isRead
+                                                  ? textColor.withOpacity(0.65)
+                                                  : textColor,
+                                              fontWeight: notif.isRead
+                                                  ? FontWeight.w600
+                                                  : FontWeight.w700,
+                                              fontSize: 14,
+                                            ),
+                                          ),
                                         ),
+                                        if (!notif.isRead)
+                                          Container(
+                                            width: 8,
+                                            height: 8,
+                                            margin: const EdgeInsets.only(
+                                                left: 6, top: 2),
+                                            decoration: const BoxDecoration(
+                                              color: Color(0xFF0A3D62),
+                                              shape: BoxShape.circle,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      notif.body,
+                                      style: TextStyle(
+                                        color: notif.isRead
+                                            ? textColor.withOpacity(0.45)
+                                            : textColor.withOpacity(0.75),
+                                        fontSize: 12,
+                                        height: 1.4,
                                       ),
                                     ),
-                                    if (!notif.isRead)
-                                      Container(
-                                        width: 8,
-                                        height: 8,
-                                        margin: const EdgeInsets.only(
-                                            left: 6, top: 2),
-                                        decoration: const BoxDecoration(
-                                          color: Color(0xFF0A3D62),
-                                          shape: BoxShape.circle,
-                                        ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      _relativeTime(notif.timestamp),
+                                      style: TextStyle(
+                                        color: isDark
+                                            ? Colors.white30
+                                            : Colors.grey[500],
+                                        fontSize: 11,
                                       ),
+                                    ),
                                   ],
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  notif.body,
-                                  style: TextStyle(
-                                    color: notif.isRead
-                                        ? textColor.withOpacity(0.4)
-                                        : textColor.withOpacity(0.7),
-                                    fontSize: 12,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          OutlinedButton(
+                            onPressed: () {
+                              final message =
+                                  'Explain this market update to me: ${notif.title} - ${notif.body}';
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => AiChatScreen(
+                                    isDark: isDark,
+                                    initialMessage: message,
                                   ),
                                 ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  _relativeTime(notif.timestamp),
-                                  style: TextStyle(
-                                    color: isDark
-                                        ? Colors.white30
-                                        : Colors.grey[400],
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ],
+                              );
+                            },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: isDark
+                                  ? Colors.white
+                                  : const Color(0xFF0A3D62),
+                              side: BorderSide(
+                                color: isDark
+                                    ? Colors.white24
+                                    : const Color(0xFF0A3D62).withOpacity(0.35),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
                             ),
+                            child: const Text('✨ Ask Lexi about this'),
                           ),
                         ],
                       ),

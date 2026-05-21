@@ -1,11 +1,65 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
-import 'package:hive/hive.dart';
 import 'package:hybstockadvisor/services/api_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+class _ChatMessage {
+  final String role;
+  final String text;
+
+  const _ChatMessage({required this.role, required this.text});
+
+  Map<String, String> toJson() => {'role': role, 'text': text};
+
+  static _ChatMessage? fromJson(Map<String, dynamic> json) {
+    final role = json['role'];
+    final text = json['text'];
+    if (role is! String || text is! String) return null;
+    return _ChatMessage(role: role, text: text);
+  }
+}
+
+class AiChatScreen extends StatelessWidget {
+  final bool isDark;
+  final String? currentTicker;
+  final String? initialMessage;
+
+  const AiChatScreen({
+    super.key,
+    required this.isDark,
+    this.currentTicker,
+    this.initialMessage,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bgColor =
+        isDark ? const Color(0xFF1A1A2E) : const Color(0xFFF2F4F7);
+
+    return Scaffold(
+      backgroundColor: bgColor,
+      body: SafeArea(
+        child: AiChatSheet(
+          isDark: isDark,
+          currentTicker: currentTicker,
+          initialMessage: initialMessage,
+        ),
+      ),
+    );
+  }
+}
 
 class AiChatSheet extends StatefulWidget {
   final bool isDark;
   final String? currentTicker; // 🚨 Add this line
-  const AiChatSheet({super.key, required this.isDark, this.currentTicker});
+  final String? initialMessage;
+  const AiChatSheet({
+    super.key,
+    required this.isDark,
+    this.currentTicker,
+    this.initialMessage,
+  });
   @override
   State<AiChatSheet> createState() => _AiChatSheetState();
 }
@@ -23,19 +77,19 @@ class _AiChatSheetState extends State<AiChatSheet> {
     },
   ];
 
-  // Saved messages loaded from Hive (previous session)
+  // Saved messages loaded from local storage (previous session)
   List<Map<String, String>> _savedMessages = [];
 
   bool _isTyping = false;
+  bool _hasInjectedInitialMessage = false;
 
-  static const String _historyBoxName = 'chat_history';
   static const String _historyKey = 'messages';
-  static const int _maxHistory = 20;
+  static const int _maxHistory = 10;
 
   @override
   void initState() {
     super.initState();
-    _loadHistory();
+    _loadHistory().whenComplete(_seedInitialMessage);
   }
 
   @override
@@ -56,12 +110,15 @@ class _AiChatSheetState extends State<AiChatSheet> {
       _messageController.clear();
     });
     _scrollToBottom();
+    _persistHistory();
 
     // 2. Call Python Backend (Gemini)
     final response = await ApiService.sendChatMessage(
       text,
       currentTicker: widget.currentTicker,
     );
+
+    if (!mounted) return;
 
     // 3. Add AI Response
     setState(() {
@@ -74,24 +131,51 @@ class _AiChatSheetState extends State<AiChatSheet> {
 
   Future<void> _loadHistory() async {
     try {
-      final box = await Hive.openBox(_historyBoxName);
-      final raw = box.get(_historyKey);
-      if (raw != null && raw is List && raw.isNotEmpty) {
-        final loaded = raw
-            .map((e) => Map<String, String>.from(e as Map))
-            .toList();
-        if (mounted) setState(() => _savedMessages = loaded);
-      }
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_historyKey);
+      if (raw == null || raw.isEmpty) return;
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return;
+      final loaded = decoded
+          .map((e) => _ChatMessage.fromJson(Map<String, dynamic>.from(e)))
+          .whereType<_ChatMessage>()
+          .map((e) => e.toJson())
+          .toList();
+      if (!mounted) return;
+      setState(() {
+        _savedMessages = loaded;
+        _messages
+          ..clear()
+          ..add({
+            'role': 'ai',
+            'text':
+                'Hello! I am your Lexi - Your AI stock advisor. Ask me about any Nigerian stock, market trends, or why a specific recommendation was made!',
+          })
+          ..addAll(loaded);
+      });
+      _scrollToBottom();
     } catch (_) {}
   }
 
-  void _persistHistory() {
+  void _seedInitialMessage() {
+    final initial = widget.initialMessage?.trim();
+    if (initial == null || initial.isEmpty || _hasInjectedInitialMessage) {
+      return;
+    }
+    _hasInjectedInitialMessage = true;
+    _messageController.text = initial;
+    _sendMessage();
+  }
+
+  Future<void> _persistHistory() async {
     // Skip the static welcome bubble (index 0), keep last _maxHistory messages
     final toSave = _messages.skip(1).toList();
     final capped = toSave.length > _maxHistory
         ? toSave.sublist(toSave.length - _maxHistory)
         : toSave;
-    Hive.openBox(_historyBoxName).then((box) => box.put(_historyKey, capped));
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = jsonEncode(capped.map((e) => e).toList());
+    await prefs.setString(_historyKey, encoded);
   }
 
   void _showHistorySheet() {
@@ -246,10 +330,12 @@ class _AiChatSheetState extends State<AiChatSheet> {
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       if (_scrollController.hasClients) {
         _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
         // Second pass after layout settles to catch any remaining extent
         Future.delayed(const Duration(milliseconds: 100), () {
+          if (!mounted) return;
           if (_scrollController.hasClients) {
             _scrollController.animateTo(
               _scrollController.position.maxScrollExtent,
