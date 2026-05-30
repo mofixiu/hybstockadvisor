@@ -1,3 +1,4 @@
+import 'dart:ui' show ImageFilter;
 import 'package:hybstockadvisor/screens/dashboard.dart';
 import 'package:hybstockadvisor/screens/profile.dart';
 import 'package:hybstockadvisor/screens/ai_insights.dart';
@@ -50,39 +51,165 @@ class BottomNavBar extends StatelessWidget {
   Widget build(BuildContext context) {
     // Get theme-aware colors
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final backgroundColor = isDarkMode
-        ? HybStockAdvisor.darkCardBackground
-        : Color(0xFFF2F4F7);
-    final selectedItemColor = HybStockAdvisor.lightButtonBackground;
-    final unselectedItemColor = Colors.grey[600];
 
-    return SizedBox(
+    // Glassmorphic configurations - optimized for true "liquid glass" premium finish
+    final glassColor = isDarkMode
+        ? Colors.black.withOpacity(0.25)
+        : Colors.white.withOpacity(0.65);
+    final borderColor = isDarkMode
+        ? Colors.white.withOpacity(0.12)
+        : Colors.white.withOpacity(0.4);
+    final activeGlowColor = isDarkMode
+        ? const Color(0xFF2979FF).withOpacity(0.12)
+        : HybStockAdvisor.lightButtonBackground.withOpacity(0.08);
+    
+    final activeItemColor = isDarkMode
+        ? const Color(0xFF2979FF)
+        : HybStockAdvisor.lightButtonBackground;
+    final inactiveItemColor = isDarkMode
+        ? Colors.white.withOpacity(0.45)
+        : Colors.grey[600]!;
+
+    return Container(
       height: 95,
-      child: BottomNavigationBar(
-        currentIndex: currentIndex,
-        onTap: (index) => _navigate(context, index),
-        backgroundColor: backgroundColor,
-        selectedItemColor: selectedItemColor,
-        unselectedItemColor: unselectedItemColor,
-        type: BottomNavigationBarType.fixed,
-        elevation: 8.0,
-        showSelectedLabels: true,
-        showUnselectedLabels: true,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
-          BottomNavigationBarItem(
-            icon: FaIcon(FontAwesomeIcons.codePullRequest),
-            label: "AI-Insights",
+      color: Colors.transparent, // Ensures it overlays cleanly on scrollable body
+      padding: const EdgeInsets.only(left: 20, right: 20, bottom: 20, top: 5),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: isDarkMode
+                  ? Colors.black.withOpacity(0.35)
+                  : Colors.black.withOpacity(0.06),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 16.0, sigmaY: 16.0),
+            child: Container(
+              decoration: BoxDecoration(
+                color: glassColor,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: borderColor,
+                  width: 1.2,
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildNavItem(
+                    context: context,
+                    index: 0,
+                    icon: Icons.home_rounded,
+                    label: "Home",
+                    isActive: currentIndex == 0,
+                    activeColor: activeItemColor,
+                    inactiveColor: inactiveItemColor,
+                    glowColor: activeGlowColor,
+                  ),
+                  _buildNavItem(
+                    context: context,
+                    index: 1,
+                    icon: FontAwesomeIcons.codePullRequest,
+                    label: "AI-Insights",
+                    isActive: currentIndex == 1,
+                    activeColor: activeItemColor,
+                    inactiveColor: inactiveItemColor,
+                    glowColor: activeGlowColor,
+                    isFa: true,
+                  ),
+                  _buildNavItem(
+                    context: context,
+                    index: 2,
+                    icon: FontAwesomeIcons.briefcase,
+                    label: "Portfolio",
+                    isActive: currentIndex == 2,
+                    activeColor: activeItemColor,
+                    inactiveColor: inactiveItemColor,
+                    glowColor: activeGlowColor,
+                    isFa: true,
+                  ),
+                  _buildNavItem(
+                    context: context,
+                    index: 3,
+                    icon: FontAwesomeIcons.person,
+                    label: "Profile",
+                    isActive: currentIndex == 3,
+                    activeColor: activeItemColor,
+                    inactiveColor: inactiveItemColor,
+                    glowColor: activeGlowColor,
+                    isFa: true,
+                  ),
+                ],
+              ),
+            ),
           ),
-          BottomNavigationBarItem(
-            icon: FaIcon(FontAwesomeIcons.briefcase),
-            label: "Portfolio",
-          ),
-          BottomNavigationBarItem(
-            icon: FaIcon(FontAwesomeIcons.person),
-            label: "Profile",
-          ),
-        ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavItem({
+    required BuildContext context,
+    required int index,
+    required IconData icon,
+    required String label,
+    required bool isActive,
+    required Color activeColor,
+    required Color inactiveColor,
+    required Color glowColor,
+    bool isFa = false,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => _navigate(context, index),
+        behavior: HitTestBehavior.opaque,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeInOut,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: isActive ? glowColor : Colors.transparent,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  isFa
+                      ? FaIcon(
+                          icon,
+                          color: isActive ? activeColor : inactiveColor,
+                          size: isActive ? 20 : 18,
+                        )
+                      : Icon(
+                          icon,
+                          color: isActive ? activeColor : inactiveColor,
+                          size: isActive ? 22 : 20,
+                        ),
+                  const SizedBox(height: 4),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                      color: isActive ? activeColor : inactiveColor,
+                      letterSpacing: 0.15,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

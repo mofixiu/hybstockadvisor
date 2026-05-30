@@ -605,6 +605,7 @@ class _DashboardState extends State<Dashboard>
 
     return Scaffold(
       backgroundColor: bgColor,
+      extendBody: true,
       floatingActionButton: SizedBox(
         width: 42,
         height: 42,
@@ -637,6 +638,7 @@ class _DashboardState extends State<Dashboard>
       ),
       bottomNavigationBar: const BottomNavBar(currentIndex: 0),
       body: SafeArea(
+        bottom: false,
         child: Column(
           children: [
             _buildHeader(isDark),
@@ -646,9 +648,11 @@ class _DashboardState extends State<Dashboard>
                 onRefresh: _fetchMarketSummaryAndStart,
                 child: SingleChildScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 16,
+                  padding: const EdgeInsets.only(
+                    left: 20,
+                    right: 20,
+                    top: 16,
+                    bottom: 120,
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -965,13 +969,29 @@ class _DashboardState extends State<Dashboard>
   }
 
   Widget _buildSafetyIndexCard(bool isDark) {
+    final glassCardColor = isDark
+        ? Colors.white.withOpacity(0.04)
+        : Colors.white.withOpacity(0.75);
+    final glassBorderColor = isDark
+        ? Colors.white.withOpacity(0.08)
+        : Colors.white.withOpacity(0.35);
+    final glassCardDecoration = BoxDecoration(
+      color: glassCardColor,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: glassBorderColor, width: 1.2),
+      boxShadow: [
+        BoxShadow(
+          color: isDark ? Colors.black26 : Colors.black.withOpacity(0.04),
+          blurRadius: 16,
+          offset: const Offset(0, 4),
+        ),
+      ],
+    );
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2A2D3E) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-      ),
+      decoration: glassCardDecoration,
       child: Column(
         children: [
           SizedBox(
@@ -980,39 +1000,17 @@ class _DashboardState extends State<Dashboard>
             child: Stack(
               alignment: Alignment.center,
               children: [
-                PieChart(
-                  PieChartData(
-                    startDegreeOffset: -210,
-                    sectionsSpace: 0,
-                    centerSpaceRadius: 100,
-                    sections: [
-                      PieChartSectionData(
-                        value: _safetyIndex,
-                        color: const Color(0xFF2979FF), // Strict Blue Restored
-                        radius: 18,
-                        showTitle: false,
-                      ),
-                      PieChartSectionData(
-                        value: 100 - _safetyIndex,
-                        color: isDark
-                            ? Colors.white12
-                            : Colors.grey.withOpacity(0.15),
-                        radius: 18,
-                        showTitle: false,
-                      ),
-                    ],
-                  ),
-                ),
+                SafetyGauge(value: _safetyIndex, isDark: isDark),
                 Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       'SAFETY INDEX',
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: 12,
                         letterSpacing: 1.2,
-                        color: Colors.black,
-                        fontWeight: FontWeight.w500,
+                        color: isDark ? Colors.white70 : const Color(0xFF555555),
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -1050,25 +1048,30 @@ class _DashboardState extends State<Dashboard>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
             decoration: BoxDecoration(
-              color: const Color(0xFFF5E6A3), // Strict Yellow Restored
+              color: isDark
+                  ? const Color(0xFFF5E6A3).withOpacity(0.12)
+                  : const Color(0xFFF5E6A3),
               borderRadius: BorderRadius.circular(30),
+              border: isDark
+                  ? Border.all(color: const Color(0xFF7A5C00).withOpacity(0.3), width: 1)
+                  : null,
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
+                Icon(
                   Icons.stop_circle,
-                  color: Color(0xFF7A5C00),
+                  color: isDark ? const Color(0xFFF5E6A3) : const Color(0xFF7A5C00),
                   size: 18,
                 ),
                 const SizedBox(width: 8),
                 Text(
                   _recommendation,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1.5,
-                    color: Color(0xFF7A5C00), // Strict Brown Restored
+                    color: isDark ? const Color(0xFFF5E6A3) : const Color(0xFF7A5C00),
                   ),
                 ),
               ],
@@ -1094,19 +1097,28 @@ class _DashboardState extends State<Dashboard>
     }
     double padding = (maxPrice - minPrice) * 0.2;
 
+    final glassCardColor = isDark
+        ? Colors.white.withOpacity(0.04)
+        : Colors.white.withOpacity(0.75);
+    final glassBorderColor = isDark
+        ? Colors.white.withOpacity(0.08)
+        : Colors.white.withOpacity(0.35);
+    final glassCardDecoration = BoxDecoration(
+      color: glassCardColor,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: glassBorderColor, width: 1.2),
+      boxShadow: [
+        BoxShadow(
+          color: isDark ? Colors.black26 : Colors.black.withOpacity(0.04),
+          blurRadius: 16,
+          offset: const Offset(0, 4),
+        ),
+      ],
+    );
+
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2A2D3E) : const Color(0xFFF2F4F7),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      decoration: glassCardDecoration,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1251,19 +1263,28 @@ class _DashboardState extends State<Dashboard>
     }
     double padding = (maxPrice - minPrice) * 0.1;
 
+    final glassCardColor = isDark
+        ? Colors.white.withOpacity(0.04)
+        : Colors.white.withOpacity(0.75);
+    final glassBorderColor = isDark
+        ? Colors.white.withOpacity(0.08)
+        : Colors.white.withOpacity(0.35);
+    final glassCardDecoration = BoxDecoration(
+      color: glassCardColor,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: glassBorderColor, width: 1.2),
+      boxShadow: [
+        BoxShadow(
+          color: isDark ? Colors.black26 : Colors.black.withOpacity(0.04),
+          blurRadius: 16,
+          offset: const Offset(0, 4),
+        ),
+      ],
+    );
+
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2A2D3E) : const Color(0xFFF2F4F7),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      decoration: glassCardDecoration,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1855,5 +1876,152 @@ class _DashboardShimmer extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Premium Safety Gauge Custom Widget
+// ─────────────────────────────────────────────
+class SafetyGauge extends StatefulWidget {
+  final double value;
+  final bool isDark;
+
+  const SafetyGauge({super.key, required this.value, required this.isDark});
+
+  @override
+  State<SafetyGauge> createState() => _SafetyGaugeState();
+}
+
+class _SafetyGaugeState extends State<SafetyGauge> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+    _animation = Tween<double>(begin: 0.0, end: widget.value).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+    _controller.forward();
+  }
+
+  @override
+  void didUpdateWidget(SafetyGauge oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value) {
+      _animation = Tween<double>(begin: _animation.value, end: widget.value).animate(
+        CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+      );
+      _controller.reset();
+      _controller.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return CustomPaint(
+          size: const Size(220, 220),
+          painter: _SafetyGaugePainter(
+            value: _animation.value,
+            isDark: widget.isDark,
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SafetyGaugePainter extends CustomPainter {
+  final double value;
+  final bool isDark;
+
+  _SafetyGaugePainter({required this.value, required this.isDark});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = (size.width / 2) - 12;
+    const startAngle = 3.14159265 * 0.75;
+    const totalSweep = 3.14159265 * 1.5;
+    final progressSweep = totalSweep * (value / 100.0).clamp(0.0, 1.0);
+
+    // 1. Draw Background Track
+    final trackPaint = Paint()
+      ..color = isDark ? Colors.white.withOpacity(0.06) : Colors.grey.withOpacity(0.12)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 14
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      startAngle,
+      totalSweep,
+      false,
+      trackPaint,
+    );
+
+    if (value <= 0) return;
+
+    // 2. Draw Glow / Shadow Arc
+    final shadowPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 18
+      ..strokeCap = StrokeCap.round
+      ..color = const Color(0xFF2979FF).withOpacity(0.12)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      startAngle,
+      progressSweep,
+      false,
+      shadowPaint,
+    );
+
+    // 3. Draw Active Progress Arc with Premium Gradient
+    final progressPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 14
+      ..strokeCap = StrokeCap.round;
+
+    final gradientColors = [
+      const Color(0xFFE53935), // Red
+      const Color(0xFFF59E0B), // Orange
+      const Color(0xFF2DBD6E), // Green
+      const Color(0xFF2979FF), // Electric Blue
+    ];
+
+    progressPaint.shader = SweepGradient(
+      colors: gradientColors,
+      startAngle: startAngle,
+      endAngle: startAngle + totalSweep,
+      transform: GradientRotation(startAngle),
+    ).createShader(Rect.fromCircle(center: center, radius: radius));
+
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      startAngle,
+      progressSweep,
+      false,
+      progressPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _SafetyGaugePainter oldDelegate) {
+    return oldDelegate.value != value || oldDelegate.isDark != isDark;
   }
 }

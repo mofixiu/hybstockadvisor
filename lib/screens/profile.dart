@@ -113,6 +113,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
 
     return Scaffold(
+      extendBody: true,
       backgroundColor: bgColor,
       bottomNavigationBar: const BottomNavBar(currentIndex: 3),
       appBar: AppBar(
@@ -130,6 +131,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
         ),
       ),
       body: SafeArea(
+        bottom: false,
         child: Column(
           children: [
             // ── App Bar ──
@@ -138,7 +140,12 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
                 onRefresh: _onRefreshProfile,
                 child: SingleChildScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: const EdgeInsets.only(
+                    left: 20,
+                    right: 20,
+                    top: 0,
+                    bottom: 120,
+                  ),
                   child: Column(
                     children: [
                     const SizedBox(height: 10),
