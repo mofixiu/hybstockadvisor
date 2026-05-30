@@ -820,6 +820,7 @@ class _PortfolioState extends State<Portfolio>
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
 
     return Scaffold(
+      extendBody: true,
       backgroundColor: bgColor,
       floatingActionButton: SizedBox(
         width: 42,
@@ -849,6 +850,7 @@ class _PortfolioState extends State<Portfolio>
 
       bottomNavigationBar: const BottomNavBar(currentIndex: 2),
       body: SafeArea(
+        bottom: false,
         child: RefreshIndicator(
           onRefresh: _onRefreshPortfolio,
           child: hasError
@@ -1332,7 +1334,7 @@ class _PortfolioState extends State<Portfolio>
                         },
                       ),
 
-                    const SliverToBoxAdapter(child: SizedBox(height: 30)),
+                    const SliverToBoxAdapter(child: SizedBox(height: 120)),
                   ],
                 ),
         ),
@@ -1548,19 +1550,28 @@ class _ShimmerCard extends StatelessWidget {
           ),
         );
 
+        final glassCardColor = isDark
+            ? Colors.white.withOpacity(0.04)
+            : Colors.white.withOpacity(0.75);
+        final glassBorderColor = isDark
+            ? Colors.white.withOpacity(0.08)
+            : Colors.white.withOpacity(0.35);
+        final glassCardDecoration = BoxDecoration(
+          color: glassCardColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: glassBorderColor, width: 1.2),
+          boxShadow: [
+            BoxShadow(
+              color: isDark ? Colors.black26 : Colors.black.withOpacity(0.04),
+              blurRadius: 12,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        );
+
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          decoration: BoxDecoration(
-            color: cardColor,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
+          decoration: glassCardDecoration,
           child: Row(
             children: [
               box(44, 44, radius: 10),
@@ -1624,21 +1635,30 @@ class _StockCard extends StatelessWidget {
     }
     double padding = (maxPrice - minPrice) * 0.2;
 
+    final glassCardColor = isDark
+        ? Colors.white.withOpacity(0.04)
+        : Colors.white.withOpacity(0.75);
+    final glassBorderColor = isDark
+        ? Colors.white.withOpacity(0.08)
+        : Colors.white.withOpacity(0.35);
+    final glassCardDecoration = BoxDecoration(
+      color: glassCardColor,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: glassBorderColor, width: 1.2),
+      boxShadow: [
+        BoxShadow(
+          color: isDark ? Colors.black26 : Colors.black.withOpacity(0.04),
+          blurRadius: 12,
+          offset: const Offset(0, 3),
+        ),
+      ],
+    );
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        decoration: BoxDecoration(
-          color: cardColor,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
+        decoration: glassCardDecoration,
         child: Row(
           children: [
             // Icon

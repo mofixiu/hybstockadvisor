@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class HybStockAdvisor {
   HybStockAdvisor._();
@@ -85,7 +86,7 @@ class HybStockAdvisor {
 
   static ThemeData lightTheme = ThemeData(
     useMaterial3: true,
-    fontFamily: 'Poppins',
+    fontFamily: GoogleFonts.montserrat().fontFamily,
     brightness: Brightness.light,
     primaryColor: Colors.black,
     iconTheme: const IconThemeData(color: Colors.grey),
@@ -115,7 +116,7 @@ class HybStockAdvisor {
 
   static ThemeData darkTheme = ThemeData(
     useMaterial3: true,
-    fontFamily: 'Poppins',
+    fontFamily: GoogleFonts.montserrat().fontFamily,
     brightness: Brightness.dark,
     primaryColor: Colors.white,
     iconTheme: const IconThemeData(color: Colors.white),

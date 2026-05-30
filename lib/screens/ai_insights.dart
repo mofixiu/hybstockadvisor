@@ -175,6 +175,7 @@ class _AiInsightsState extends State<AiInsights>
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
 
     return Scaffold(
+      extendBody: true,
       backgroundColor: bgColor,
       floatingActionButton: SizedBox(
         width: 42,
@@ -219,6 +220,7 @@ class _AiInsightsState extends State<AiInsights>
         centerTitle: true,
       ),
       body: SafeArea(
+        bottom: false,
         child: _isLoading && _shimmerController != null
             ? _AiInsightsShimmer(
                 controller: _shimmerController!,
@@ -230,9 +232,11 @@ class _AiInsightsState extends State<AiInsights>
                 children: [
                   Expanded(
                     child: SingleChildScrollView(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 8,
+                      padding: const EdgeInsets.only(
+                        left: 20,
+                        right: 20,
+                        top: 8,
+                        bottom: 120,
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
