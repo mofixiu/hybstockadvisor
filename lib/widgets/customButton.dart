@@ -6,7 +6,9 @@ class CustomButton extends StatelessWidget {
   final VoidCallback? ontap;
   final String data;
   final Color textcolor, backgroundcolor;
-  final double width,height;
+  final double width, height;
+  final bool isLoading;
+
   CustomButton({
     Key? key,
     required this.ontap,
@@ -15,29 +17,41 @@ class CustomButton extends StatelessWidget {
     required this.backgroundcolor,
     required this.width,
     required this.height,
+    this.isLoading = false,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
+    final bool isDisabled = ontap == null || isLoading;
     return InkWell(
-      onTap: ontap,
-      child: Container(
+      onTap: isLoading ? null : ontap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
         alignment: Alignment.center,
         width: width,
         height: height,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(5),
-          color: ontap == null ? backgroundcolor.withOpacity(0.6) : backgroundcolor,  
+          borderRadius: BorderRadius.circular(10),
+          color: isDisabled ? backgroundcolor.withOpacity(0.6) : backgroundcolor,  
         ),
-        child: Text(
-          textAlign: TextAlign.center,
-          data,
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 21,
-            color: textcolor,
-          ),
-        ),
+        child: isLoading
+            ? SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  valueColor: AlwaysStoppedAnimation<Color>(textcolor),
+                ),
+              )
+            : Text(
+                textAlign: TextAlign.center,
+                data,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 21,
+                  color: textcolor,
+                ),
+              ),
       ),
     );
   }

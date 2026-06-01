@@ -216,13 +216,13 @@ class NotificationCenter extends StatelessWidget {
                             onPressed: () {
                               final message =
                                   'Explain this market update to me: ${notif.title} - ${notif.body}';
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => AiChatScreen(
-                                    isDark: isDark,
-                                    initialMessage: message,
-                                  ),
+                              showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                backgroundColor: Colors.transparent,
+                                builder: (_) => AiChatSheet(
+                                  isDark: isDark,
+                                  initialMessage: message,
                                 ),
                               );
                             },

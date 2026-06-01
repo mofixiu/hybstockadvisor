@@ -187,24 +187,15 @@ class _ForgotPasswordState extends State<ForgotPassword> {
               Padding(
                 padding: const EdgeInsets.only(left: 20.0, right: 20, top: 10),
                 child: CustomButton(
-                  ontap: _isLoading ? () {} : _handleSendOtp,
+                  ontap: _handleSendOtp,
                   data: 'Send OTP',
                   textcolor: Colors.white,
-                  backgroundcolor: _isLoading
-                      ? Colors.grey
-                      : const Color(0xFF0A3D62),
+                  backgroundcolor: const Color(0xFF0A3D62),
                   width: MediaQuery.of(context).size.width,
                   height: 50,
+                  isLoading: _isLoading,
                 ),
               ),
-
-              if (_isLoading)
-                const Padding(
-                  padding: EdgeInsets.only(top: 16),
-                  child: Center(
-                    child: CircularProgressIndicator(color: Color(0xFF0A3D62)),
-                  ),
-                ),
 
               SizedBox(height: MediaQuery.of(context).size.height * 0.03),
 
