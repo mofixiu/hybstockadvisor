@@ -462,19 +462,12 @@ class _LoginState extends State<Login> {
                   },
                   data: "Login",
                   textcolor: Colors.white,
-                  backgroundcolor: _isLoading
-                      ? Colors.grey
-                      : const Color(0xFF0A3D62),
+                  backgroundcolor: const Color(0xFF0A3D62),
                   width: MediaQuery.of(context).size.width,
                   height: 50,
+                  isLoading: _isLoading,
                 ),
               ),
-
-              if (_isLoading)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 10),
-                  child: CircularProgressIndicator(color: Color(0xFF0A3D62)),
-                ),
 
               // Padding(
               //   padding: const EdgeInsets.symmetric(horizontal: 20.0),

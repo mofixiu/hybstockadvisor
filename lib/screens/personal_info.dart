@@ -350,23 +350,14 @@ class _PersonalInfoState extends State<PersonalInfo> {
 
               // ── Save Button ──
               CustomButton(
-                ontap: _isLoading ? () {} : _saveChanges,
+                ontap: _saveChanges,
                 data: 'Save Changes',
                 textcolor: Colors.white,
-                backgroundcolor: _isLoading
-                    ? Colors.grey
-                    : const Color(0xFF0A3D62),
+                backgroundcolor: const Color(0xFF0A3D62),
                 width: MediaQuery.of(context).size.width,
                 height: 50,
+                isLoading: _isLoading,
               ),
-
-              if (_isLoading)
-                const Padding(
-                  padding: EdgeInsets.only(top: 16),
-                  child: Center(
-                    child: CircularProgressIndicator(color: Color(0xFF0A3D62)),
-                  ),
-                ),
 
               const SizedBox(height: 24),
             ],
