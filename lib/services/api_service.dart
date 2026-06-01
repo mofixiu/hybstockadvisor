@@ -29,6 +29,7 @@ class ApiService {
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
     iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
   );
+  static bool _chatAuthLogged = false;
 
   static final Dio _dio = _createDio();
 
@@ -90,6 +91,12 @@ class ApiService {
 
           if (token != null) {
             options.headers['Authorization'] = 'Bearer $token';
+          }
+
+          if (!_chatAuthLogged && options.path.contains('/chat')) {
+            final hasAuthHeader = options.headers['Authorization'] != null;
+            log('🔍 /chat Authorization present: $hasAuthHeader');
+            _chatAuthLogged = true;
           }
 
           return handler.next(options);
