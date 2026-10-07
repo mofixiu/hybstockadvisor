@@ -467,6 +467,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
                             await context
                                 .read<NotificationProvider>()
                                 .clearAll();
+                            if (!context.mounted) return;
                             context
                                 .read<ProfileProvider>()
                                 .resetForSessionChange();

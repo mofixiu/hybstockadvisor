@@ -61,6 +61,10 @@ class _FirstLoginState extends State<FirstLogin> {
             marketCap: cap,
             price: price,
             change: changeStr,
+            currency: item['currency']?.toString() ?? 'NGN',
+            asOf: item['as_of']?.toString(),
+            source: item['source']?.toString(),
+            stale: item['stale'] == true,
           ),
         );
       }
@@ -70,9 +74,8 @@ class _FirstLoginState extends State<FirstLogin> {
         _isFetchingStocks = false;
       });
     } else {
-      // Fallback to defaultNigerianStocks if API fails
       setState(() {
-        _availableStocks = List.from(defaultNigerianStocks);
+        _availableStocks = [];
         _isFetchingStocks = false;
       });
     }

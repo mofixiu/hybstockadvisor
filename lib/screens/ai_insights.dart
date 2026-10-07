@@ -26,13 +26,8 @@ class _AiInsightsState extends State<AiInsights>
   String _recommendation = "LOADING...";
   String _explanation = "Analyzing market data...";
 
-  double _aiConfidence = 0.0;
-  double _marketStability = 0.0;
-  double _publicSentiment = 0.0;
-  double _safetyIndex = 0.0;
-
-  double _rsiImpact = 0.0;
-  double _emaImpact = 0.0;
+  double? _aiConfidence;
+  double? _safetyIndex;
 
   AnimationController? _shimmerController;
 
@@ -58,10 +53,7 @@ class _AiInsightsState extends State<AiInsights>
     final Uri url = Uri.parse('https://app.investbamboo.com/');
     try {
       if (await canLaunchUrl(url)) {
-        await launchUrl(
-          url,
-          mode: LaunchMode.inAppWebView,
-        );
+        await launchUrl(url, mode: LaunchMode.inAppWebView);
       } else {
         throw 'Could not launch $url';
       }
@@ -88,19 +80,60 @@ class _AiInsightsState extends State<AiInsights>
     if (!mounted) return;
 
     if (response != null && response['status'] == 'success') {
-      final data = response['data'];
+      final data = response['data'] is Map
+          ? Map<String, dynamic>.from(response['data'] as Map)
+          : <String, dynamic>{};
+      final signal = data['signal'] is Map
+          ? Map<String, dynamic>.from(data['signal'] as Map)
+          : <String, dynamic>{};
+      final available =
+          signal['available'] == true && data['data_stale'] != true;
+      final validation = signal['validation'] is Map
+          ? Map<String, dynamic>.from(signal['validation'] as Map)
+          : <String, dynamic>{};
+      final validationDetails = <String>[];
+      if (validation.isNotEmpty) {
+        validationDetails.add(
+          'Reviewed model ${validation['model_version'] ?? 'version unavailable'}; '
+          '${validation['paper_samples'] ?? 0} paper predictions.',
+        );
+        if (validation['backtest_brier_score'] is num &&
+            validation['backtest_prior_baseline_brier_score'] is num) {
+          validationDetails.add(
+            '10-session walk-forward Brier ${validation['backtest_brier_score']} '
+            'vs prior baseline ${validation['backtest_prior_baseline_brier_score']}.',
+          );
+        }
+      }
+      final price = data['price'];
+      final currency = data['currency']?.toString() ?? 'NGN';
+      final dataDate = data['data_as_of']?.toString() ?? 'date unavailable';
+      final stale = data['data_stale'] == true;
+      final contextLines = <String>[
+        if (price is num) '$currency daily close: ${price.toStringAsFixed(2)}.',
+        'Data date: $dataDate${stale ? ' (stale)' : ''}.',
+        if (data['data_source'] != null) 'Source: ${data['data_source']}.',
+        if (available)
+          'Research horizon: ${signal['horizon'] is Map ? (signal['horizon'] as Map)['primary'] ?? 10 : 10} trading days.',
+        ...validationDetails,
+      ];
       setState(() {
-        _recommendation = data['recommendation']
-            .toString()
-            .replaceAll(RegExp(r'[^\w\s]'), '')
-            .trim();
-        _explanation = data['explanation'];
-        _aiConfidence = (data['ai_confidence'] as num).toDouble();
-        _marketStability = (data['market_stability'] as num).toDouble();
-        _publicSentiment = (data['public_sentiment'] as num).toDouble();
-        _safetyIndex = (data['safety_index'] as num).toDouble();
-        _rsiImpact = (data['rsi_impact'] as num).toDouble();
-        _emaImpact = (data['ema_impact'] as num).toDouble();
+        _recommendation = available
+            ? '${signal['direction'] ?? 'Directional'} research signal'
+            : stale
+            ? 'STALE DATA · NO SIGNAL'
+            : 'RESEARCH CONTEXT ONLY';
+        _explanation = [
+          data['explanation']?.toString() ?? 'Market context is unavailable.',
+          ...contextLines,
+          if (signal['evidence'] is List)
+            ...((signal['evidence'] as List).map((item) => 'Evidence: $item')),
+        ].join('\n');
+        final probability = signal['probability_positive'];
+        _aiConfidence = available && probability is num
+            ? probability.toDouble() * 100
+            : null;
+        _safetyIndex = null;
         _isLoading = false;
       });
     } else {
@@ -296,8 +329,10 @@ class _AiInsightsState extends State<AiInsights>
                             iconBgColor: const Color(0xFFDCEAFF),
                             iconColor: const Color(0xFF2979FF),
                             label: 'AI Confidence',
-                            value: '${_aiConfidence.toStringAsFixed(1)}%',
-                            percent: _aiConfidence / 100,
+                            value: _aiConfidence == null
+                                ? 'Unavailable'
+                                : '${_aiConfidence!.toStringAsFixed(1)}%',
+                            percent: (_aiConfidence ?? 0) / 100,
                             gaugeColor: const Color(0xFF2979FF),
                           ),
 
@@ -310,8 +345,8 @@ class _AiInsightsState extends State<AiInsights>
                             iconBgColor: const Color(0xFFD6F5E3),
                             iconColor: const Color(0xFF2DBD6E),
                             label: 'Market Stability',
-                            value: '${_marketStability.toStringAsFixed(1)}%',
-                            percent: _marketStability / 100,
+                            value: 'Unavailable',
+                            percent: 0,
                             gaugeColor: const Color(0xFF2DBD6E),
                           ),
 
@@ -324,8 +359,8 @@ class _AiInsightsState extends State<AiInsights>
                             iconBgColor: const Color(0xFFFFDCDC),
                             iconColor: const Color(0xFFE53935),
                             label: 'Public Sentiment',
-                            value: '${_publicSentiment.toStringAsFixed(1)}%',
-                            percent: _publicSentiment / 100,
+                            value: 'Unavailable',
+                            percent: 0,
                             gaugeColor: const Color(0xFFE53935),
                           ),
 
@@ -361,27 +396,19 @@ class _AiInsightsState extends State<AiInsights>
                                 _ImpactBar(
                                   isDark: isDark,
                                   label: 'RSI Momentum',
-                                  impact: _rsiImpact >= 0
-                                      ? '+${(_rsiImpact * 100).toStringAsFixed(1)}% Impact'
-                                      : '${(_rsiImpact * 100).toStringAsFixed(1)}% Impact',
-                                  impactColor: _rsiImpact >= 0
-                                      ? const Color(0xFF2DBD6E)
-                                      : const Color(0xFFE53935),
-                                  value: _rsiImpact.abs(),
-                                  isPositive: _rsiImpact >= 0,
+                                  impact: 'Unavailable',
+                                  impactColor: Colors.grey,
+                                  value: 0,
+                                  isPositive: false,
                                 ),
                                 const SizedBox(height: 24),
                                 _ImpactBar(
                                   isDark: isDark,
                                   label: 'EMA 50 Trend',
-                                  impact: _emaImpact >= 0
-                                      ? '+${(_emaImpact * 100).toStringAsFixed(1)}% Impact'
-                                      : '${(_emaImpact * 100).toStringAsFixed(1)}% Impact',
-                                  impactColor: _emaImpact >= 0
-                                      ? const Color(0xFF2DBD6E)
-                                      : const Color(0xFFE53935),
-                                  value: _emaImpact.abs(),
-                                  isPositive: _emaImpact >= 0,
+                                  impact: 'Unavailable',
+                                  impactColor: Colors.grey,
+                                  value: 0,
+                                  isPositive: false,
                                 ),
                                 const SizedBox(height: 12),
                                 Row(
@@ -456,7 +483,9 @@ class _AiInsightsState extends State<AiInsights>
                                   text: TextSpan(
                                     children: [
                                       TextSpan(
-                                        text: _safetyIndex.toStringAsFixed(1),
+                                        text:
+                                            _safetyIndex?.toStringAsFixed(1) ??
+                                            'N/A',
                                         style: const TextStyle(
                                           color: Colors.white,
                                           fontSize: 48,
@@ -476,7 +505,9 @@ class _AiInsightsState extends State<AiInsights>
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  _safetyIndex >= 60
+                                  _safetyIndex == null
+                                      ? 'No validated safety score is available for this data.'
+                                      : _safetyIndex! >= 60
                                       ? 'High safety rating based on current volatility and historical resilience.'
                                       : 'Caution advised. Asset is currently experiencing turbulence or negative sentiment.',
                                   style: const TextStyle(

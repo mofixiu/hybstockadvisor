@@ -15,7 +15,6 @@ import 'package:hybstockadvisor/providers/notification_provider.dart';
 import 'package:hybstockadvisor/services/api_service.dart';
 import 'package:hybstockadvisor/widgets/custom_page_route.dart';
 import 'package:hybstockadvisor/widgets/stock_logo.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 // ─────────────────────────────────────────────
 // Stock Data Model
@@ -26,6 +25,10 @@ class NigerianStock {
   final String marketCap;
   final double price;
   final String change;
+  final String currency;
+  final String? asOf;
+  final String? source;
+  final bool stale;
 
   const NigerianStock({
     required this.symbol,
@@ -33,33 +36,15 @@ class NigerianStock {
     required this.marketCap,
     required this.price,
     required this.change,
+    this.currency = 'NGN',
+    this.asOf,
+    this.source,
+    this.stale = false,
   });
 }
 
-// Static fallback data so the app doesn't look empty before the API loads
-final List<NigerianStock> defaultNigerianStocks = [
-  const NigerianStock(
-    symbol: 'GTCO',
-    name: 'Guaranty Trust Holding Company Plc',
-    marketCap: '4.35T',
-    price: 119.00,
-    change: '-',
-  ),
-  const NigerianStock(
-    symbol: 'MTNN',
-    name: 'MTN Nigeria Communications PLC',
-    marketCap: '16.36T',
-    price: 790.00,
-    change: '-',
-  ),
-  const NigerianStock(
-    symbol: 'DANGCEM',
-    name: 'Dangote Cement Plc',
-    marketCap: '13.57T',
-    price: 809.90,
-    change: '-',
-  ),
-];
+// No sample market prices are shown before verified data arrives.
+const List<NigerianStock> defaultNigerianStocks = [];
 
 // Dictionary to map API tickers to real company names and market caps
 // stockMetadata removed — name & market_cap now come from the API
@@ -80,9 +65,12 @@ class _DashboardState extends State<Dashboard>
   // --- AI State Variables ---
   bool _isLoading = true;
   bool _hasError = false;
-  double _safetyIndex = 0.0;
+  double? _safetyIndex;
   String _recommendation = "LOADING";
   double _currentPrice = 0.0;
+  String _currency = 'NGN';
+  String _dataAsOf = 'date unavailable';
+  bool _isStale = false;
   String _priceChange = "-";
   List<double> _last5DaysPrices = [0, 0, 0, 0, 0];
   List<String> _last5DaysDates = ['-', '-', '-', '-', '-'];
@@ -147,6 +135,10 @@ class _DashboardState extends State<Dashboard>
             marketCap: cap,
             price: price,
             change: changeStr,
+            currency: item['currency']?.toString() ?? 'NGN',
+            asOf: item['as_of']?.toString(),
+            source: item['source']?.toString(),
+            stale: item['stale'] == true,
           ),
         );
       }
@@ -210,10 +202,20 @@ class _DashboardState extends State<Dashboard>
     if (!mounted) return;
 
     if (response != null && response['status'] == 'success') {
-      List<dynamic> historicalData = response['data'];
+      final historicalData = response['data'] is List
+          ? List<dynamic>.from(response['data'] as List)
+          : <dynamic>[];
 
       if (historicalData.isNotEmpty) {
         var todayData = historicalData.last;
+        final signal = response['signal'] is Map
+            ? Map<String, dynamic>.from(response['signal'] as Map)
+            : <String, dynamic>{};
+        final meta = response['meta'] is Map
+            ? Map<String, dynamic>.from(response['meta'] as Map)
+            : <String, dynamic>{};
+        final stale = todayData['stale'] == true || meta['stale'] == true;
+        final hasSignal = signal['available'] == true && !stale;
 
         List<double> prices = [];
         List<String> dates = [];
@@ -251,12 +253,16 @@ class _DashboardState extends State<Dashboard>
         }
 
         setState(() {
-          _safetyIndex = (todayData['Safety_Index'] as num).toDouble();
-          _recommendation = todayData['Recommendation']
-              .toString()
-              .replaceAll(RegExp(r'[^\w\s]'), '')
-              .trim();
+          _safetyIndex = null;
+          _recommendation = hasSignal
+              ? '${signal['direction']} research signal'
+              : stale
+              ? 'STALE DATA · NO SIGNAL'
+              : 'RESEARCH CONTEXT ONLY';
           _currentPrice = (todayData['close'] as num).toDouble();
+          _currency = todayData['currency']?.toString() ?? 'NGN';
+          _dataAsOf = todayData['date']?.toString() ?? 'date unavailable';
+          _isStale = stale;
           _last5DaysPrices = prices;
           _last5DaysDates = dates;
           _priceChange = changeStr;
@@ -269,6 +275,10 @@ class _DashboardState extends State<Dashboard>
                 existingStock?.marketCap ?? _selectedStock?.marketCap ?? '--',
             price: _currentPrice,
             change: _priceChange,
+            currency: _currency,
+            asOf: _dataAsOf,
+            source: existingStock?.source,
+            stale: _isStale,
           );
 
           _isLoading = false;
@@ -276,6 +286,11 @@ class _DashboardState extends State<Dashboard>
 
         // Fire in-app notifications for portfolio stocks (not just selected)
         // Dedup in provider prevents duplicates if called again
+      } else {
+        setState(() {
+          _isLoading = false;
+          _hasError = true;
+        });
       }
     } else {
       setState(() {
@@ -337,44 +352,36 @@ class _DashboardState extends State<Dashboard>
           final List<dynamic> history = response['data'];
           if (history.isEmpty) continue;
 
-          final todayData = history.last;
-          final double safetyIdx = (todayData['Safety_Index'] as num)
-              .toDouble();
-          final String recommendation = todayData['Recommendation']
-              .toString()
-              .replaceAll(RegExp(r'[^\w\s]'), '')
-              .trim();
-          final recLower = recommendation.toLowerCase();
-
-          // Sell / Strong Sell (priority 1)
-          if (recLower.contains('sell')) {
-            final isSS = recLower.contains('strong');
-            candidates.add((
-              1,
-              isSS ? 'Strong Sell Alert' : 'Sell Alert',
-              '$ticker is rated "$recommendation". Consider reviewing your position.',
-              NotificationType.aiForecast,
-              '${ticker}_sell',
-            ));
-          }
-
-          // AI Insight — only when notable: safety < 4 or > 7 (priority 3)
+          final meta = response['meta'] is Map
+              ? Map<String, dynamic>.from(response['meta'] as Map)
+              : <String, dynamic>{};
+          final signal = response['signal'] is Map
+              ? Map<String, dynamic>.from(response['signal'] as Map)
+              : <String, dynamic>{};
           if ((notifForecast || notifSafety) &&
-              (safetyIdx < 4.0 || safetyIdx > 7.0)) {
+              signal['available'] == true &&
+              meta['stale'] != true) {
+            final direction = signal['direction']?.toString() ?? 'directional';
             candidates.add((
               3,
-              'AI Insight: $ticker',
-              '$ticker is rated "$recommendation" with a safety index of ${safetyIdx.toStringAsFixed(1)}',
+              'Research update: $ticker',
+              '$ticker has a reviewed $direction signal for ${signal['horizon'] is Map ? (signal['horizon'] as Map)['primary'] ?? 10 : 10} trading days.',
               NotificationType.aiForecast,
               ticker,
             ));
           }
 
-          // Price movement ≥ 3% (priority 4)
-          if (notifPrice && history.length >= 2) {
-            final today = (history.last['close'] as num).toDouble();
-            final yesterday = (history[history.length - 2]['close'] as num)
-                .toDouble();
+          // Price movement ≥ 3% (priority 4); stale closes never alert.
+          if (notifPrice && history.length >= 2 && meta['stale'] != true) {
+            final todayValue = history.last['close'];
+            final yesterdayValue = history[history.length - 2]['close'];
+            if (todayValue is! num ||
+                yesterdayValue is! num ||
+                yesterdayValue == 0) {
+              continue;
+            }
+            final today = todayValue.toDouble();
+            final yesterday = yesterdayValue.toDouble();
             final pct = ((today - yesterday) / yesterday) * 100;
             if (pct.abs() >= 3.0) {
               final changeStr = pct > 0
@@ -415,7 +422,7 @@ class _DashboardState extends State<Dashboard>
     }
   }
 
-  /// Collect strong buy candidates from all market stocks (priority 2).
+  /// Collect positive reviewed research signals from all market stocks.
   Future<List<(int, String, String, NotificationType, String?)>>
   _collectStrongBuyCandidates() async {
     final tickers = _searchableStocks.map((s) => s.symbol).toList();
@@ -427,40 +434,42 @@ class _DashboardState extends State<Dashboard>
     );
     if (!mounted) return [];
 
-    final List<({String ticker, String recommendation, double safetyIndex})>
-    raw = [];
+    final List<({String ticker, double probability, int horizon})> raw = [];
 
     for (int i = 0; i < tickers.length; i++) {
       final response = forecasts[i];
       if (response == null || response['status'] != 'success') continue;
 
-      final List<dynamic> history = response['data'];
-      if (history.isEmpty) continue;
-
-      final todayData = history.last;
-      final String rec = todayData['Recommendation']
-          .toString()
-          .replaceAll(RegExp(r'[^\w\s]'), '')
-          .trim();
-
-      if (rec.toLowerCase().contains('strong') &&
-          rec.toLowerCase().contains('buy')) {
+      final meta = response['meta'] is Map
+          ? Map<String, dynamic>.from(response['meta'] as Map)
+          : <String, dynamic>{};
+      final signal = response['signal'] is Map
+          ? Map<String, dynamic>.from(response['signal'] as Map)
+          : <String, dynamic>{};
+      final probability = signal['probability_positive'];
+      if (signal['available'] == true &&
+          signal['direction'] == 'positive' &&
+          meta['stale'] != true &&
+          probability is num) {
+        final horizon = signal['horizon'] is Map
+            ? (signal['horizon'] as Map)['primary'] as int? ?? 10
+            : 10;
         raw.add((
           ticker: tickers[i],
-          recommendation: rec,
-          safetyIndex: (todayData['Safety_Index'] as num).toDouble(),
+          probability: probability.toDouble(),
+          horizon: horizon,
         ));
       }
     }
 
-    raw.sort((a, b) => b.safetyIndex.compareTo(a.safetyIndex));
+    raw.sort((a, b) => b.probability.compareTo(a.probability));
     return raw
         .take(3)
         .map(
           (c) => (
             2,
-            'Strong Buy Alert',
-            '${c.ticker} is rated "${c.recommendation}" (Safety: ${c.safetyIndex.toStringAsFixed(1)}). This could be a buying opportunity.',
+            'Positive research signal',
+            '${c.ticker} has a ${(c.probability * 100).toStringAsFixed(1)}% estimated positive-return probability over ${c.horizon} trading days.',
             NotificationType.aiForecast,
             '${c.ticker}_strongbuy' as String?,
           ),
@@ -478,11 +487,17 @@ class _DashboardState extends State<Dashboard>
     if (data == null || !mounted) return null;
 
     final portfolioItems = data['portfolio'] as List? ?? [];
+    final pricedPortfolioItems = portfolioItems
+        .where((item) => item['change_pct'] is num && item['stale'] != true)
+        .toList();
 
     String portfolioSummary;
     if (portfolioItems.isEmpty) {
       portfolioSummary =
           'Your portfolio is empty. Add stocks to get weekly recaps.';
+    } else if (pricedPortfolioItems.isEmpty) {
+      portfolioSummary =
+          'Verified closing prices are unavailable for your portfolio.';
     } else {
       double totalChange = 0;
       String topGainer = '';
@@ -490,7 +505,7 @@ class _DashboardState extends State<Dashboard>
       String topLoser = '';
       double topLoss = double.infinity;
 
-      for (final item in portfolioItems) {
+      for (final item in pricedPortfolioItems) {
         final String ticker = item['ticker'] as String;
         final double changePct = (item['change_pct'] as num).toDouble();
         totalChange += changePct;
@@ -503,7 +518,7 @@ class _DashboardState extends State<Dashboard>
           topLoser = ticker;
         }
       }
-      final avgChange = totalChange / portfolioItems.length;
+      final avgChange = totalChange / pricedPortfolioItems.length;
       final sign = avgChange >= 0 ? '+' : '';
       portfolioSummary =
           'Your portfolio averaged $sign${avgChange.toStringAsFixed(2)}% this week.';
@@ -523,6 +538,7 @@ class _DashboardState extends State<Dashboard>
       NigerianStock? marketTopGainer;
       double marketTopGain = double.negativeInfinity;
       for (final stock in _searchableStocks) {
+        if (stock.stale) continue;
         if (stock.change == '-') continue;
         final pct =
             double.tryParse(
@@ -573,26 +589,6 @@ class _DashboardState extends State<Dashboard>
     final name = box.get('first_name');
     if (name != null && mounted) {
       setState(() => _username = name);
-    }
-  }
-
-  Future<void> _launchBamboo() async {
-    final Uri url = Uri.parse('https://app.investbamboo.com/');
-    try {
-      if (await canLaunchUrl(url)) {
-        await launchUrl(
-          url,
-          mode: LaunchMode.inAppWebView,
-        );
-      } else {
-        throw 'Could not launch $url';
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Could not open brokerage platform.")),
-        );
-      }
     }
   }
 
@@ -704,7 +700,7 @@ class _DashboardState extends State<Dashboard>
                           child: GestureDetector(
                             onTap: () => context.pushFade(const AiInsights()),
                             child: Text(
-                              "For safety index explanation, click here",
+                              "For research signal details, click here",
                               style: TextStyle(
                                 color: Color(0xFF3D5A80),
                                 fontSize: 12,
@@ -713,7 +709,7 @@ class _DashboardState extends State<Dashboard>
                             ),
                           ),
                         ),
-                      
+
                         const SizedBox(height: 20),
                         _buildCurrentPriceCard(isDark),
                         const SizedBox(height: 16),
@@ -901,7 +897,7 @@ class _DashboardState extends State<Dashboard>
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
-                    '₦${_currentPrice.toStringAsFixed(2)}  •  Mkt Cap: ${selectedStock.marketCap}',
+                    '${selectedStock.currency} ${_currentPrice.toStringAsFixed(2)}  •  Close: ${selectedStock.asOf ?? 'date unavailable'}${selectedStock.stale ? ' · Stale' : ''}',
                     style: TextStyle(fontSize: 11, color: Colors.grey[500]),
                   ),
                 ],
@@ -1000,16 +996,18 @@ class _DashboardState extends State<Dashboard>
             child: Stack(
               alignment: Alignment.center,
               children: [
-                SafetyGauge(value: _safetyIndex, isDark: isDark),
+                SafetyGauge(value: _safetyIndex ?? 0, isDark: isDark),
                 Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'SAFETY INDEX',
+                      'RESEARCH SIGNAL',
                       style: TextStyle(
                         fontSize: 12,
                         letterSpacing: 1.2,
-                        color: isDark ? Colors.white70 : const Color(0xFF555555),
+                        color: isDark
+                            ? Colors.white70
+                            : const Color(0xFF555555),
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -1018,7 +1016,7 @@ class _DashboardState extends State<Dashboard>
                       text: TextSpan(
                         children: [
                           TextSpan(
-                            text: _safetyIndex.toStringAsFixed(1),
+                            text: _safetyIndex?.toStringAsFixed(1) ?? 'N/A',
                             style: TextStyle(
                               fontSize: 38,
                               fontWeight: FontWeight.bold,
@@ -1028,14 +1026,15 @@ class _DashboardState extends State<Dashboard>
                                   : const Color(0xFF1A1A2E),
                             ),
                           ),
-                          TextSpan(
-                            text: '%',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.grey[500],
+                          if (_safetyIndex != null)
+                            TextSpan(
+                              text: '%',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.grey[500],
+                              ),
                             ),
-                          ),
                         ],
                       ),
                     ),
@@ -1053,7 +1052,10 @@ class _DashboardState extends State<Dashboard>
                   : const Color(0xFFF5E6A3),
               borderRadius: BorderRadius.circular(30),
               border: isDark
-                  ? Border.all(color: const Color(0xFF7A5C00).withOpacity(0.3), width: 1)
+                  ? Border.all(
+                      color: const Color(0xFF7A5C00).withOpacity(0.3),
+                      width: 1,
+                    )
                   : null,
             ),
             child: Row(
@@ -1061,7 +1063,9 @@ class _DashboardState extends State<Dashboard>
               children: [
                 Icon(
                   Icons.stop_circle,
-                  color: isDark ? const Color(0xFFF5E6A3) : const Color(0xFF7A5C00),
+                  color: isDark
+                      ? const Color(0xFFF5E6A3)
+                      : const Color(0xFF7A5C00),
                   size: 18,
                 ),
                 const SizedBox(width: 8),
@@ -1071,7 +1075,9 @@ class _DashboardState extends State<Dashboard>
                     fontSize: 15,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1.5,
-                    color: isDark ? const Color(0xFFF5E6A3) : const Color(0xFF7A5C00),
+                    color: isDark
+                        ? const Color(0xFFF5E6A3)
+                        : const Color(0xFF7A5C00),
                   ),
                 ),
               ],
@@ -1295,7 +1301,7 @@ class _DashboardState extends State<Dashboard>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'CURRENT PRICE',
+                    'DAILY CLOSE${_isStale ? ' · STALE' : ''}',
                     style: TextStyle(
                       fontSize: 11,
                       letterSpacing: 1.4,
@@ -1305,7 +1311,7 @@ class _DashboardState extends State<Dashboard>
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '₦${_currentPrice.toStringAsFixed(2)}',
+                    '$_currency ${_currentPrice.toStringAsFixed(2)}',
                     style: TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
@@ -1682,7 +1688,7 @@ class _StockSearchModalState extends State<_StockSearchModal> {
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
                                   Text(
-                                    '₦${stock.price.toStringAsFixed(2)}',
+                                    '${stock.currency} ${stock.price.toStringAsFixed(2)}',
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 13,
@@ -1691,11 +1697,15 @@ class _StockSearchModalState extends State<_StockSearchModal> {
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    isNeutral ? stock.marketCap : stock.change,
+                                    stock.stale
+                                        ? 'Stale close · ${stock.asOf ?? 'date unavailable'}'
+                                        : isNeutral
+                                        ? stock.marketCap
+                                        : stock.change,
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w600,
-                                      color: isNeutral
+                                      color: stock.stale || isNeutral
                                           ? Colors.grey[500]
                                           : isPositive
                                           ? Colors.green
@@ -1892,7 +1902,8 @@ class SafetyGauge extends StatefulWidget {
   State<SafetyGauge> createState() => _SafetyGaugeState();
 }
 
-class _SafetyGaugeState extends State<SafetyGauge> with SingleTickerProviderStateMixin {
+class _SafetyGaugeState extends State<SafetyGauge>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _animation;
 
@@ -1903,9 +1914,10 @@ class _SafetyGaugeState extends State<SafetyGauge> with SingleTickerProviderStat
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     );
-    _animation = Tween<double>(begin: 0.0, end: widget.value).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
-    );
+    _animation = Tween<double>(
+      begin: 0.0,
+      end: widget.value,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
     _controller.forward();
   }
 
@@ -1913,9 +1925,10 @@ class _SafetyGaugeState extends State<SafetyGauge> with SingleTickerProviderStat
   void didUpdateWidget(SafetyGauge oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.value != widget.value) {
-      _animation = Tween<double>(begin: _animation.value, end: widget.value).animate(
-        CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
-      );
+      _animation = Tween<double>(begin: _animation.value, end: widget.value)
+          .animate(
+            CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+          );
       _controller.reset();
       _controller.forward();
     }
@@ -1960,7 +1973,9 @@ class _SafetyGaugePainter extends CustomPainter {
 
     // 1. Draw Background Track
     final trackPaint = Paint()
-      ..color = isDark ? Colors.white.withOpacity(0.06) : Colors.grey.withOpacity(0.12)
+      ..color = isDark
+          ? Colors.white.withOpacity(0.06)
+          : Colors.grey.withOpacity(0.12)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 14
       ..strokeCap = StrokeCap.round;
