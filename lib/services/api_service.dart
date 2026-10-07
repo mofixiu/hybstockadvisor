@@ -21,7 +21,13 @@ String get host {
   }
 }
 
-String get baseUrl => "https://hybstockadvisor-us.onrender.com/api";
+const String _defaultApiHost = 'https://hybstockadvisor-us.onrender.com';
+const String _configuredApiHost = String.fromEnvironment(
+  'API_BASE_URL',
+  defaultValue: _defaultApiHost,
+);
+String get baseUrl =>
+    '${(_configuredApiHost.isNotEmpty ? _configuredApiHost : host).replaceFirst(RegExp(r'/$'), '')}/api';
 
 class ApiService {
   static final navigatorKey = GlobalKey<NavigatorState>();
@@ -29,8 +35,6 @@ class ApiService {
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
     iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
   );
-  static bool _chatAuthLogged = false;
-
   static final Dio _dio = _createDio();
 
   // static Dio _createDio() {
@@ -76,8 +80,8 @@ class ApiService {
     final dio = Dio(
       BaseOptions(
         baseUrl: baseUrl,
-        connectTimeout: const Duration(seconds: 150),
-        receiveTimeout: const Duration(seconds: 150),
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 30),
         headers: {'Accept': 'application/json'},
       ),
     );
@@ -91,12 +95,6 @@ class ApiService {
 
           if (token != null) {
             options.headers['Authorization'] = 'Bearer $token';
-          }
-
-          if (!_chatAuthLogged && options.path.contains('/chat')) {
-            final hasAuthHeader = options.headers['Authorization'] != null;
-            log('🔍 /chat Authorization present: $hasAuthHeader');
-            _chatAuthLogged = true;
           }
 
           return handler.next(options);
@@ -209,60 +207,53 @@ class ApiService {
       final notificationsBox = await Hive.openBox('notifications');
       await notificationsBox.clear();
       log('User data cleared');
-    } catch (e) {
-      log('Error clearing user data: $e');
+    } catch (_) {
+      log('Local session data could not be cleared');
     }
   }
 
   // 2. The specific function to fetch our AI Data
   static Future<Map<String, dynamic>?> getStockForecast(String ticker) async {
     try {
-      log(
-        '📡 Fetching AI Forecast for $ticker from: $baseUrl/forecast/$ticker',
-      );
-
       final response = await _dio.get('/forecast/$ticker');
 
       if (response.statusCode == 200) {
-        log('✅ Successfully fetched data for $ticker');
         return response.data as Map<String, dynamic>;
       }
       return null;
     } on DioException catch (e) {
-      log('❌ Dio Error fetching $ticker: ${e.message}');
+      log('Market forecast request failed: ${e.type}');
       return null;
-    } catch (e) {
-      log('❌ General Error: $e');
+    } catch (_) {
+      log('Market forecast response could not be read');
       return null;
     }
   }
 
   static Future<Map<String, dynamic>?> getMarketSummary() async {
     try {
-      log('📡 Fetching Market Summary from: $baseUrl/summary');
       final response = await _dio.get('/summary');
 
       if (response.statusCode == 200) {
         return response.data as Map<String, dynamic>;
       }
       return null;
-    } catch (e) {
-      log('❌ Error fetching market summary: $e');
+    } catch (_) {
+      log('Market summary request failed');
       return null;
     }
   }
 
   static Future<Map<String, dynamic>?> getInsights(String ticker) async {
     try {
-      log('📡 Fetching AI Insights for $ticker...');
       final response = await _dio.get('/insights/$ticker');
 
       if (response.statusCode == 200) {
         return response.data as Map<String, dynamic>;
       }
       return null;
-    } catch (e) {
-      log('❌ Error fetching insights: $e');
+    } catch (_) {
+      log('Research details request failed');
       return null;
     }
   }
@@ -273,7 +264,6 @@ class ApiService {
     String password,
   ) async {
     try {
-      log('📡 Attempting Login for: $identifier');
       final response = await _dio.post(
         '/auth/login',
         data: {'identifier': identifier.trim(), 'password': password},
@@ -302,7 +292,7 @@ class ApiService {
     Map<String, dynamic> userData,
   ) async {
     try {
-      log('📡 Attempting Registration for: ${userData['identifier']}');
+      log('📡 Submitting tester registration');
       final response = await _dio.post('/auth/register', data: userData);
       return response.data;
     } on DioException catch (e) {
@@ -354,8 +344,8 @@ class ApiService {
         'status': 'error',
         'detail': e.response?.data?['detail'] ?? 'Network error',
       };
-    } catch (e) {
-      return {'status': 'error', 'detail': 'Unexpected error: $e'};
+    } catch (_) {
+      return {'status': 'error', 'detail': 'Unexpected error'};
     }
   }
 
@@ -364,7 +354,6 @@ class ApiService {
       final userId = await _getUserId();
       if (userId == null) return null;
 
-      log('📡 Fetching Assets for User: $userId');
       // 2. Fixed the double /api/api typo (Fixed 404 Error)
       final response = await _dio.get('/user/$userId/assets');
 
@@ -372,8 +361,8 @@ class ApiService {
         return response.data['data'];
       }
       return null;
-    } catch (e) {
-      log('❌ Error fetching assets: $e');
+    } catch (_) {
+      log('Private portfolio request failed');
       return null;
     }
   }
@@ -532,14 +521,14 @@ class ApiService {
       return "Sorry, I couldn't process that.";
     } on DioException catch (e) {
       // 🚨 NEW: Catch timeouts and print exact errors to your terminal!
-      log("🚨 CHAT ERROR: ${e.type} - ${e.message}");
+      log("Lexi request failed: ${e.type}");
 
       if (e.type == DioExceptionType.receiveTimeout) {
         return "Lexi is processing a lot of portfolio data right now! Give me a few more seconds and try again.";
       }
       return "Network error. Please check your connection.";
-    } catch (e) {
-      log("🚨 GENERAL ERROR: $e");
+    } catch (_) {
+      log("Lexi response could not be read");
       return "An unexpected error occurred.";
     }
   }

@@ -118,6 +118,7 @@ class _PortfolioState extends State<Portfolio>
 
     for (int i = 0; i < rawItems.length; i++) {
       final raw = rawItems[i];
+      if (raw['stale'] == true || raw['change_pct'] is! num) continue;
       final double changePct = (raw['change_pct'] as num).toDouble();
       if (changePct.abs() >= 3.0) {
         final String ticker = raw['ticker'] as String;
@@ -146,16 +147,23 @@ class _PortfolioState extends State<Portfolio>
   // ── Convert API Data to UI Cards ──
   _StockItem _buildUIStockItem(dynamic item, {required bool isPortfolio}) {
     String symbol = item['ticker'];
-    double price = (item['live_price'] as num).toDouble();
-    double changePct = (item['change_pct'] as num).toDouble();
+    final rawPrice = item['live_price'];
+    final double? price = rawPrice is num ? rawPrice.toDouble() : null;
+    final rawChange = item['change_pct'];
+    final double? changePct = rawChange is num ? rawChange.toDouble() : null;
+    final String currency = item['currency']?.toString() ?? 'NGN';
+    final DateTime? asOf = DateTime.tryParse(item['as_of']?.toString() ?? '');
+    final bool stale = item['stale'] == true;
 
-    // Parse the 7-day sparkline data
-    List<dynamic> rawSpark =
-        item['spark_data'] ?? [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
-    List<double> spark = rawSpark.map((e) => (e as num).toDouble()).toList();
+    final rawSpark = item['spark_data'];
+    final List<double> spark = rawSpark is List
+        ? rawSpark.whereType<num>().map((e) => e.toDouble()).toList()
+        : <double>[];
 
-    bool isPositive = changePct >= 0;
-    String changeStr = changePct == 0.0
+    final bool isPositive = changePct != null && changePct >= 0;
+    final String changeStr = changePct == null || stale
+        ? '-'
+        : changePct == 0.0
         ? "-"
         : "${isPositive ? '+' : ''}${changePct.toStringAsFixed(2)}%";
 
@@ -163,6 +171,10 @@ class _PortfolioState extends State<Portfolio>
     String subtitle = isPortfolio
         ? "${(item['quantity'] as num).toStringAsFixed(0)} units @ ₦${(item['avg_buy_price'] as num).toStringAsFixed(2)}"
         : "$symbol Plc";
+    final recency = price == null
+        ? 'Price unavailable'
+        : '${stale ? 'Stale close' : 'Daily close'} · ${asOf?.toIso8601String().split('T').first ?? 'date unavailable'}';
+    subtitle = '$subtitle · $recency';
 
     // return _StockItem(
     //   symbol: symbol,
@@ -180,20 +192,34 @@ class _PortfolioState extends State<Portfolio>
     return _StockItem(
       symbol: symbol,
       name: subtitle,
-      price: '₦${price.toStringAsFixed(2)}',
+      price: price == null
+          ? 'Unavailable'
+          : '$currency ${price.toStringAsFixed(2)}',
       change: changeStr,
       isPositive: isPositive,
-      dotColor: isPositive ? Colors.green : Colors.red,
+      dotColor: changePct == null || stale
+          ? Colors.grey
+          : isPositive
+          ? Colors.green
+          : Colors.red,
       iconBg: const Color(0xFF1C1C1E),
       iconLabel: symbol.substring(0, min(2, symbol.length)),
       iconWidget: null,
       sparkData: spark,
-      sparkColor: isPositive ? Colors.green : Colors.red,
+      sparkColor: changePct == null || stale
+          ? Colors.grey
+          : isPositive
+          ? Colors.green
+          : Colors.red,
       // 🚨 NEW: Pass the raw numbers!
       quantity: isPortfolio ? (item['quantity'] as num).toDouble() : null,
       avgBuyPrice: isPortfolio
           ? (item['avg_buy_price'] as num).toDouble()
           : null,
+      marketPrice: price,
+      currency: currency,
+      asOf: asOf,
+      stale: stale,
     );
   }
 
@@ -201,7 +227,7 @@ class _PortfolioState extends State<Portfolio>
   List<_StockItem> _getSorted(List<_StockItem> items, _SortOption opt) {
     final list = List<_StockItem>.from(items);
     double parsePrice(String p) =>
-        double.tryParse(p.replaceAll('₦', '').replaceAll(',', '')) ?? 0;
+        double.tryParse(p.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0;
     double parseChange(String c) {
       if (c == '-') return 0;
       return double.tryParse(c.replaceAll('%', '').replaceAll('+', '')) ?? 0;
@@ -569,17 +595,21 @@ class _PortfolioState extends State<Portfolio>
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
 
     // 🧮 Do the Math!
-    double currentPrice =
-        double.tryParse(stock.price.replaceAll('₦', '').replaceAll(',', '')) ??
-        0;
+    final double? currentPrice = stock.marketPrice;
     double totalCost = stock.quantity! * stock.avgBuyPrice!;
-    double currentValue = stock.quantity! * currentPrice;
-    double profitLoss = currentValue - totalCost;
-    double profitLossPct = (totalCost > 0)
+    final double? currentValue = currentPrice == null
+        ? null
+        : stock.quantity! * currentPrice;
+    final double? profitLoss = currentValue == null
+        ? null
+        : currentValue - totalCost;
+    final double? profitLossPct = profitLoss == null
+        ? null
+        : totalCost > 0
         ? (profitLoss / totalCost) * 100
         : 0.0;
 
-    bool inProfit = profitLoss >= 0;
+    bool inProfit = (profitLoss ?? 0) >= 0;
     Color pnlColor = inProfit ? Colors.green : Colors.red;
     String sign = inProfit ? "+" : "";
 
@@ -624,7 +654,9 @@ class _PortfolioState extends State<Portfolio>
               style: TextStyle(color: Colors.grey[500], fontSize: 14),
             ),
             Text(
-              "₦${currentValue.toStringAsFixed(2)}",
+              currentValue == null
+                  ? 'Unavailable'
+                  : "${stock.currency} ${currentValue.toStringAsFixed(2)}",
               style: TextStyle(
                 fontSize: 36,
                 fontWeight: FontWeight.bold,
@@ -633,22 +665,35 @@ class _PortfolioState extends State<Portfolio>
             ),
 
             // Profit/Loss Badge
-            Container(
-              margin: const EdgeInsets.only(top: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: pnlColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                "$sign₦${profitLoss.abs().toStringAsFixed(2)} ($sign${profitLossPct.toStringAsFixed(2)}%)",
-                style: TextStyle(
-                  color: pnlColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
+            if (profitLoss != null)
+              Container(
+                margin: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: pnlColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  "$sign${stock.currency} ${profitLoss.abs().toStringAsFixed(2)} ($sign${profitLossPct!.toStringAsFixed(2)}%)",
+                  style: TextStyle(
+                    color: pnlColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
                 ),
               ),
-            ),
+            if (profitLoss == null)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(
+                  'Profit and loss are unavailable until a verified close is available.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey[500]),
+                ),
+              ),
             const SizedBox(height: 30),
 
             // Stats Grid
@@ -668,7 +713,7 @@ class _PortfolioState extends State<Portfolio>
                 children: [
                   _buildStatRow(
                     "Total Investment",
-                    "₦${totalCost.toStringAsFixed(2)}",
+                    "${stock.currency} ${totalCost.toStringAsFixed(2)}",
                     textColor,
                   ),
                   const Divider(height: 24),
@@ -680,13 +725,15 @@ class _PortfolioState extends State<Portfolio>
                   const Divider(height: 24),
                   _buildStatRow(
                     "Average Buy Price",
-                    "₦${stock.avgBuyPrice?.toStringAsFixed(2)}",
+                    "${stock.currency} ${stock.avgBuyPrice?.toStringAsFixed(2)}",
                     textColor,
                   ),
                   const Divider(height: 24),
                   _buildStatRow(
                     "Current Market Price",
-                    "₦${currentPrice.toStringAsFixed(2)}",
+                    currentPrice == null
+                        ? 'Unavailable'
+                        : "${stock.currency} ${currentPrice.toStringAsFixed(2)}",
                     textColor,
                   ),
                 ],
@@ -1713,33 +1760,35 @@ class _StockCard extends StatelessWidget {
             SizedBox(
               width: 60,
               height: 40,
-              child: LineChart(
-                LineChartData(
-                  minX: 0,
-                  maxX: (stock.sparkData.length - 1).toDouble(),
-                  minY: minPrice - padding,
-                  maxY: maxPrice + padding,
-                  gridData: FlGridData(show: false),
-                  borderData: FlBorderData(show: false),
-                  titlesData: FlTitlesData(show: false),
-                  lineTouchData: LineTouchData(enabled: false),
-                  lineBarsData: [
-                    LineChartBarData(
-                      spots: stock.sparkData
-                          .asMap()
-                          .entries
-                          .map((e) => FlSpot(e.key.toDouble(), e.value))
-                          .toList(),
-                      isCurved: true,
-                      color: stock.sparkColor,
-                      barWidth: 2,
-                      isStrokeCapRound: true,
-                      dotData: FlDotData(show: false),
-                      belowBarData: BarAreaData(show: false),
+              child: stock.sparkData.isEmpty
+                  ? Text('—', style: TextStyle(color: Colors.grey[500]))
+                  : LineChart(
+                      LineChartData(
+                        minX: 0,
+                        maxX: (stock.sparkData.length - 1).toDouble(),
+                        minY: minPrice - padding,
+                        maxY: maxPrice + padding,
+                        gridData: FlGridData(show: false),
+                        borderData: FlBorderData(show: false),
+                        titlesData: FlTitlesData(show: false),
+                        lineTouchData: LineTouchData(enabled: false),
+                        lineBarsData: [
+                          LineChartBarData(
+                            spots: stock.sparkData
+                                .asMap()
+                                .entries
+                                .map((e) => FlSpot(e.key.toDouble(), e.value))
+                                .toList(),
+                            isCurved: true,
+                            color: stock.sparkColor,
+                            barWidth: 2,
+                            isStrokeCapRound: true,
+                            dotData: FlDotData(show: false),
+                            belowBarData: BarAreaData(show: false),
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
-              ),
             ),
 
             const SizedBox(width: 10),
@@ -2014,6 +2063,10 @@ class _StockItem {
   // 🚨 NEW: Added these so we can do math in the bottom sheet!
   final double? quantity;
   final double? avgBuyPrice;
+  final double? marketPrice;
+  final String currency;
+  final DateTime? asOf;
+  final bool stale;
 
   const _StockItem({
     required this.symbol,
@@ -2029,5 +2082,9 @@ class _StockItem {
     required this.sparkColor,
     this.quantity,
     this.avgBuyPrice,
+    this.marketPrice,
+    this.currency = 'NGN',
+    this.asOf,
+    this.stale = false,
   });
 }

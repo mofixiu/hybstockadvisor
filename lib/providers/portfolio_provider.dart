@@ -58,6 +58,10 @@ class PortfolioProvider extends ChangeNotifier {
             price: (item['price'] as num).toDouble(),
             change:
                 '${(item['change_pct'] as num).toDouble() >= 0 ? '+' : ''}${(item['change_pct'] as num).toDouble().toStringAsFixed(2)}%',
+            currency: (item['currency'] as String?) ?? 'NGN',
+            source: item['source']?.toString(),
+            asOf: item['as_of']?.toString(),
+            stale: item['stale'] == true,
           );
         }).toList();
       } else {
