@@ -1720,12 +1720,17 @@ class _StockCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(
-                        stock.symbol,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                          color: textColor,
+                      Flexible(
+                        child: Text(
+                          stock.symbol,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          softWrap: false,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            color: textColor,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 6),
@@ -1794,27 +1799,35 @@ class _StockCard extends StatelessWidget {
             const SizedBox(width: 10),
 
             // Price + Change
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  stock.price,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                    color: textColor,
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    stock.price,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: textColor,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  stock.change,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: stock.isPositive ? Colors.green : Colors.red,
+                  const SizedBox(height: 2),
+                  Text(
+                    stock.change,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: stock.isPositive ? Colors.green : Colors.red,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),

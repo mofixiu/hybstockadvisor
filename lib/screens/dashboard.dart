@@ -216,6 +216,10 @@ class _DashboardState extends State<Dashboard>
             : <String, dynamic>{};
         final stale = todayData['stale'] == true || meta['stale'] == true;
         final hasSignal = signal['available'] == true && !stale;
+        final probabilityPositive = signal['probability_positive'];
+        final signalPercentage = hasSignal && probabilityPositive is num
+            ? (probabilityPositive.toDouble() * 100).clamp(0, 100).toDouble()
+            : null;
 
         List<double> prices = [];
         List<String> dates = [];
@@ -253,7 +257,7 @@ class _DashboardState extends State<Dashboard>
         }
 
         setState(() {
-          _safetyIndex = null;
+          _safetyIndex = signalPercentage;
           _recommendation = hasSignal
               ? '${signal['direction']} research signal'
               : stale
@@ -337,11 +341,21 @@ class _DashboardState extends State<Dashboard>
       final portfolioItems = data['portfolio'] as List? ?? [];
       final tickers = portfolioItems.map((e) => e['ticker'] as String).toList();
 
-      if (tickers.isNotEmpty) {
+      if (tickers.isNotEmpty && (notifForecast || notifSafety || notifPrice)) {
         final marketDataProvider = context.read<MarketDataProvider>();
-        final forecasts = await Future.wait(
-          tickers.map((t) => marketDataProvider.getStockForecast(t)),
-        );
+        final forecasts = <Map<String, dynamic>?>[];
+        // Keep mobile requests bounded. A request storm can exhaust the small
+        // connection pool used by the Render service.
+        for (var start = 0; start < tickers.length; start += 3) {
+          forecasts.addAll(
+            await Future.wait(
+              tickers
+                  .skip(start)
+                  .take(3)
+                  .map((ticker) => marketDataProvider.getStockForecast(ticker)),
+            ),
+          );
+        }
         if (!mounted) return;
 
         for (int i = 0; i < tickers.length; i++) {
@@ -362,9 +376,12 @@ class _DashboardState extends State<Dashboard>
               signal['available'] == true &&
               meta['stale'] != true) {
             final direction = signal['direction']?.toString() ?? 'directional';
+            final isPositive = direction == 'positive';
             candidates.add((
-              3,
-              'Research update: $ticker',
+              isPositive ? 2 : 3,
+              isPositive
+                  ? 'Positive research signal: $ticker'
+                  : 'Research update: $ticker',
               '$ticker has a reviewed $direction signal for ${signal['horizon'] is Map ? (signal['horizon'] as Map)['primary'] ?? 10 : 10} trading days.',
               NotificationType.aiForecast,
               ticker,
@@ -400,12 +417,6 @@ class _DashboardState extends State<Dashboard>
       }
     }
 
-    // ── 5. Strong Buy alerts (priority 2) — top 3 from all market stocks ──
-    if (notifForecast && mounted) {
-      final strongBuyCandidates = await _collectStrongBuyCandidates();
-      candidates.addAll(strongBuyCandidates);
-    }
-
     if (!mounted) return;
 
     // ── Sort by priority (ascending) and cap ──
@@ -420,61 +431,6 @@ class _DashboardState extends State<Dashboard>
         ticker: ticker,
       );
     }
-  }
-
-  /// Collect positive reviewed research signals from all market stocks.
-  Future<List<(int, String, String, NotificationType, String?)>>
-  _collectStrongBuyCandidates() async {
-    final tickers = _searchableStocks.map((s) => s.symbol).toList();
-    if (tickers.isEmpty) return [];
-
-    final marketDataProvider = context.read<MarketDataProvider>();
-    final forecasts = await Future.wait(
-      tickers.map((t) => marketDataProvider.getStockForecast(t)),
-    );
-    if (!mounted) return [];
-
-    final List<({String ticker, double probability, int horizon})> raw = [];
-
-    for (int i = 0; i < tickers.length; i++) {
-      final response = forecasts[i];
-      if (response == null || response['status'] != 'success') continue;
-
-      final meta = response['meta'] is Map
-          ? Map<String, dynamic>.from(response['meta'] as Map)
-          : <String, dynamic>{};
-      final signal = response['signal'] is Map
-          ? Map<String, dynamic>.from(response['signal'] as Map)
-          : <String, dynamic>{};
-      final probability = signal['probability_positive'];
-      if (signal['available'] == true &&
-          signal['direction'] == 'positive' &&
-          meta['stale'] != true &&
-          probability is num) {
-        final horizon = signal['horizon'] is Map
-            ? (signal['horizon'] as Map)['primary'] as int? ?? 10
-            : 10;
-        raw.add((
-          ticker: tickers[i],
-          probability: probability.toDouble(),
-          horizon: horizon,
-        ));
-      }
-    }
-
-    raw.sort((a, b) => b.probability.compareTo(a.probability));
-    return raw
-        .take(3)
-        .map(
-          (c) => (
-            2,
-            'Positive research signal',
-            '${c.ticker} has a ${(c.probability * 100).toStringAsFixed(1)}% estimated positive-return probability over ${c.horizon} trading days.',
-            NotificationType.aiForecast,
-            '${c.ticker}_strongbuy' as String?,
-          ),
-        )
-        .toList();
   }
 
   /// Collect a weekly summary candidate (priority 0). Returns null if not Friday.
@@ -1069,15 +1025,20 @@ class _DashboardState extends State<Dashboard>
                   size: 18,
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  _recommendation,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.5,
-                    color: isDark
-                        ? const Color(0xFFF5E6A3)
-                        : const Color(0xFF7A5C00),
+                Flexible(
+                  child: Text(
+                    _recommendation,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.5,
+                      color: isDark
+                          ? const Color(0xFFF5E6A3)
+                          : const Color(0xFF7A5C00),
+                    ),
                   ),
                 ),
               ],
@@ -1139,12 +1100,17 @@ class _DashboardState extends State<Dashboard>
           ),
           Row(
             children: [
-              Text(
-                '₦${selectedStock.price.toStringAsFixed(2)}',
-                style: TextStyle(
-                  fontSize: 25,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : const Color(0xFF1A1A2E),
+              Flexible(
+                child: Text(
+                  '₦${selectedStock.price.toStringAsFixed(2)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: false,
+                  style: TextStyle(
+                    fontSize: 25,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : const Color(0xFF1A1A2E),
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -1297,30 +1263,35 @@ class _DashboardState extends State<Dashboard>
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'DAILY CLOSE${_isStale ? ' · STALE' : ''}',
-                    style: TextStyle(
-                      fontSize: 11,
-                      letterSpacing: 1.4,
-                      color: isDark ? Colors.white : const Color(0xFF1A1A2E),
-                      fontWeight: FontWeight.w500,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'DAILY CLOSE${_isStale ? ' · STALE' : ''}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        letterSpacing: 1.4,
+                        color: isDark ? Colors.white : const Color(0xFF1A1A2E),
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '$_currency ${_currentPrice.toStringAsFixed(2)}',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : const Color(0xFF1A1A2E),
+                    const SizedBox(height: 6),
+                    Text(
+                      '$_currency ${_currentPrice.toStringAsFixed(2)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      softWrap: false,
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : const Color(0xFF1A1A2E),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-              const Spacer(),
+              if (!changeIsNeutral) const SizedBox(width: 8),
               if (!changeIsNeutral)
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
