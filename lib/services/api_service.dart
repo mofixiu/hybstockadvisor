@@ -88,7 +88,7 @@ class ApiService {
 
     dio.interceptors.add(
       InterceptorsWrapper(
-        // 🚨 1. NEW: THE INJECTION MIDDLEWARE 🚨
+        // Attach the JWT to every request.
         onRequest: (options, handler) async {
           // Read JWT from encrypted secure storage
           final token = await _secureStorage.read(key: 'auth_token');
@@ -100,7 +100,7 @@ class ApiService {
           return handler.next(options);
         },
 
-        // 2. KEEP YOUR EXISTING ERROR MIDDLEWARE
+        // On 401 outside the auth endpoints, clear the session and go to login.
         onError: (DioException e, ErrorInterceptorHandler handler) async {
           if (e.response?.statusCode == 401) {
             final path = e.requestOptions.path;
@@ -135,6 +135,13 @@ class ApiService {
   }
 
   static String currentTicker = "GTCO";
+
+  /// The `detail` message from a JSON error response, if there is one.
+  static String? _detail(DioException e) {
+    final data = e.response?.data;
+    if (data is Map && data['detail'] is String) return data['detail'] as String;
+    return null;
+  }
 
   /// Get user_id from Hive or redirect to login if missing.
   static Future<int?> _getUserId() async {
@@ -271,7 +278,6 @@ class ApiService {
       return response.data;
     } on DioException catch (e) {
       if (e.response != null) {
-        // SAFE CHECK: Make sure the response is actually JSON before parsing it
         if (e.response!.data is Map<String, dynamic>) {
           return {
             'status': 'error',
@@ -280,11 +286,11 @@ class ApiService {
         } else {
           return {
             'status': 'error',
-            'detail': 'Server error: ${e.response!.statusCode}',
+            'detail': "The server couldn't sign you in (error ${e.response!.statusCode}). Try again later.",
           };
         }
       }
-      return {'status': 'error', 'detail': 'Network Error. Check connection.'};
+      return {'status': 'error', 'detail': "Couldn't reach the server. Check your connection and try again."};
     }
   }
 
@@ -292,26 +298,24 @@ class ApiService {
     Map<String, dynamic> userData,
   ) async {
     try {
-      log('📡 Submitting tester registration');
+      log('Submitting tester registration');
       final response = await _dio.post('/auth/register', data: userData);
       return response.data;
     } on DioException catch (e) {
       if (e.response != null) {
-        // 🚨 THIS IS THE CRITICAL FIX: Check if it's JSON before reading it!
         if (e.response!.data is Map<String, dynamic>) {
           return {
             'status': 'error',
             'detail': e.response!.data['detail'] ?? 'Registration failed',
           };
         } else {
-          // If Python crashes and sends text, we catch it gracefully here
           return {
             'status': 'error',
-            'detail': 'Server crashed (500). Check Python terminal.',
+            'detail': "The server couldn't create the account. Try again later.",
           };
         }
       }
-      return {'status': 'error', 'detail': 'Network Error. Check connection.'};
+      return {'status': 'error', 'detail': "Couldn't reach the server. Check your connection and try again."};
     }
   }
 
@@ -342,10 +346,10 @@ class ApiService {
     } on DioException catch (e) {
       return {
         'status': 'error',
-        'detail': e.response?.data?['detail'] ?? 'Network error',
+        'detail': _detail(e) ?? "Couldn't reach the server. Check your connection and try again.",
       };
     } catch (_) {
-      return {'status': 'error', 'detail': 'Unexpected error'};
+      return {'status': 'error', 'detail': 'Something went wrong. Try again.'};
     }
   }
 
@@ -385,10 +389,10 @@ class ApiService {
     } on DioException catch (e) {
       return {
         'status': 'error',
-        'detail': e.response?.data?['detail'] ?? 'Network error',
+        'detail': _detail(e) ?? "Couldn't reach the server. Check your connection and try again.",
       };
     } catch (e) {
-      return {'status': 'error', 'detail': 'Unexpected error: $e'};
+      return {'status': 'error', 'detail': 'Something went wrong. Try again.'};
     }
   }
 
@@ -409,7 +413,7 @@ class ApiService {
     } on DioException catch (e) {
       return {
         'status': 'error',
-        'detail': e.response?.data?['detail'] ?? 'Network error',
+        'detail': _detail(e) ?? "Couldn't reach the server. Check your connection and try again.",
       };
     }
   }
@@ -431,7 +435,7 @@ class ApiService {
     } on DioException catch (e) {
       return {
         'status': 'error',
-        'detail': e.response?.data?['detail'] ?? 'Network error',
+        'detail': _detail(e) ?? "Couldn't reach the server. Check your connection and try again.",
       };
     }
   }
@@ -452,7 +456,7 @@ class ApiService {
           'detail': e.response!.data['detail'] ?? 'Request failed',
         };
       }
-      return {'status': 'error', 'detail': 'Network Error. Check connection.'};
+      return {'status': 'error', 'detail': "Couldn't reach the server. Check your connection and try again."};
     }
   }
 
@@ -473,7 +477,7 @@ class ApiService {
           'detail': e.response!.data['detail'] ?? 'Invalid OTP',
         };
       }
-      return {'status': 'error', 'detail': 'Network Error. Check connection.'};
+      return {'status': 'error', 'detail': "Couldn't reach the server. Check your connection and try again."};
     }
   }
 
@@ -494,13 +498,15 @@ class ApiService {
           'detail': e.response!.data['detail'] ?? 'Reset failed',
         };
       }
-      return {'status': 'error', 'detail': 'Network Error. Check connection.'};
+      return {'status': 'error', 'detail': "Couldn't reach the server. Check your connection and try again."};
     }
   }
 
-  // --- AI CHATBOT METHOD ---
-  // --- AI CHATBOT METHOD ---
-  static Future<String> sendChatMessage(
+  // --- RESEARCH ASSISTANT ("Ask") ---
+
+  /// Sends a question to the research assistant. The reply is returned as
+  /// Markdown; errors come back as short plain sentences for the user.
+  static Future<ChatResult> sendChatMessage(
     String message, {
     String? currentTicker,
   }) async {
@@ -509,27 +515,57 @@ class ApiService {
         '/chat',
         data: {
           'text': message,
-          if (currentTicker != null)
-            'current_ticker': currentTicker, // Send the ticker to Python!
+          if (currentTicker != null) 'current_ticker': currentTicker,
         },
       );
-      if (response.statusCode == 200 && response.data['reply'] != null) {
-        // Clean the string by replacing all '**' with nothing!
-        String cleanReply = response.data['reply'].replaceAll('**', '');
-        return cleanReply;
+      final reply = response.data is Map ? response.data['reply'] : null;
+      if (response.statusCode == 200 && reply is String && reply.trim().isNotEmpty) {
+        return ChatResult.reply(reply.trim());
       }
-      return "Sorry, I couldn't process that.";
+      return const ChatResult.error('No answer came back. Try asking again.');
     } on DioException catch (e) {
-      // 🚨 NEW: Catch timeouts and print exact errors to your terminal!
-      log("Lexi request failed: ${e.type}");
-
-      if (e.type == DioExceptionType.receiveTimeout) {
-        return "Lexi is processing a lot of portfolio data right now! Give me a few more seconds and try again.";
+      log('Ask request failed: ${e.type}');
+      switch (e.type) {
+        case DioExceptionType.connectionTimeout:
+        case DioExceptionType.sendTimeout:
+        case DioExceptionType.receiveTimeout:
+          return const ChatResult.error(
+            'The answer took too long. Try again in a moment.',
+          );
+        case DioExceptionType.connectionError:
+          return const ChatResult.error(
+            "Couldn't reach the server. Check your connection and try again.",
+          );
+        default:
+          break;
       }
-      return "Network error. Please check your connection.";
+      final code = e.response?.statusCode;
+      if (code == 503) {
+        return const ChatResult.error('Ask is not set up on the server yet.');
+      }
+      if (code == 502) {
+        return const ChatResult.error(
+          "Ask couldn't answer just now. Try again in a moment.",
+        );
+      }
+      if (code == 422) {
+        return const ChatResult.error(
+          'That question is too long. Keep it under 2,000 characters.',
+        );
+      }
+      return const ChatResult.error('Something went wrong. Try again.');
     } catch (_) {
-      log("Lexi response could not be read");
-      return "An unexpected error occurred.";
+      log('Ask response could not be read');
+      return const ChatResult.error('Something went wrong. Try again.');
     }
   }
+}
+
+/// Outcome of a question to the research assistant.
+class ChatResult {
+  final String? reply;
+  final String? error;
+  const ChatResult.reply(String this.reply) : error = null;
+  const ChatResult.error(String this.error) : reply = null;
+  bool get ok => reply != null;
 }

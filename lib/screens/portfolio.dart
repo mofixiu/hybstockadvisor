@@ -1,25 +1,95 @@
-// ignore_for_file: use_build_context_synchronously
-
 import 'package:flutter/material.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:hive/hive.dart';
-import 'package:hybstockadvisor/widgets/ai_chat_sheet.dart';
-import 'package:provider/provider.dart';
-import 'package:text_scroll/text_scroll.dart';
-import 'package:hybstockadvisor/widgets/bottomNavBar.dart';
-import 'dart:math';
-
 import 'package:hybstockadvisor/models/app_notification.dart';
+import 'package:hybstockadvisor/models/market_stock.dart';
 import 'package:hybstockadvisor/providers/notification_provider.dart';
 import 'package:hybstockadvisor/providers/portfolio_provider.dart';
-// We import Dashboard to access NigerianStock model and default lists
-import 'package:hybstockadvisor/screens/dashboard.dart';
+import 'package:hybstockadvisor/theme/format.dart';
+import 'package:hybstockadvisor/theme/tokens.dart';
+import 'package:hybstockadvisor/widgets/ask_sheet.dart';
+import 'package:hybstockadvisor/widgets/bottomNavBar.dart';
+import 'package:hybstockadvisor/widgets/sparkline.dart';
 import 'package:hybstockadvisor/widgets/stock_logo.dart';
+import 'package:hybstockadvisor/widgets/stock_picker_sheet.dart';
+import 'package:hybstockadvisor/widgets/ui.dart';
+import 'package:provider/provider.dart';
 
-// ─────────────────────────────────────────────
-// Sort Options
-// ─────────────────────────────────────────────
-enum _SortOption { nameAZ, nameZA, priceHigh, priceLow, gainers, losers }
+enum _Sort { nameAZ, nameZA, priceHigh, priceLow, gainers, losers }
+
+const _sortLabels = {
+  _Sort.nameAZ: 'Symbol, A to Z',
+  _Sort.nameZA: 'Symbol, Z to A',
+  _Sort.priceHigh: 'Price, high to low',
+  _Sort.priceLow: 'Price, low to high',
+  _Sort.gainers: 'Day change, best first',
+  _Sort.losers: 'Day change, worst first',
+};
+
+/// One holding or watchlist row, parsed from `/api/user/{id}/assets`.
+class _Row {
+  final String symbol;
+  final double? quantity;
+  final double? avgPrice;
+  final double? price;
+  final double? changePct;
+  final List<double> spark;
+  final String currency;
+  final DateTime? asOf;
+  final String? source;
+  final bool stale;
+
+  const _Row({
+    required this.symbol,
+    this.quantity,
+    this.avgPrice,
+    this.price,
+    this.changePct,
+    this.spark = const [],
+    this.currency = 'NGN',
+    this.asOf,
+    this.source,
+    this.stale = true,
+  });
+
+  factory _Row.from(Map raw) {
+    final spark = raw['spark_data'] is List
+        ? (raw['spark_data'] as List).whereType<num>().map((e) => e.toDouble()).toList()
+        : <double>[];
+    double? d(Object? v) => v is num ? v.toDouble() : null;
+    return _Row(
+      symbol: raw['ticker'].toString(),
+      quantity: d(raw['quantity']),
+      avgPrice: d(raw['avg_buy_price']),
+      price: d(raw['live_price']),
+      changePct: d(raw['change_pct']),
+      spark: spark,
+      currency: raw['currency']?.toString() ?? 'NGN',
+      asOf: Fmt.parse(raw['as_of']),
+      source: raw['source']?.toString(),
+      stale: raw['stale'] == true,
+    );
+  }
+
+  bool get isHolding => quantity != null && avgPrice != null;
+
+  /// A price that is current enough to value the holding.
+  bool get priced => price != null && !stale;
+
+  double? get cost => isHolding ? quantity! * avgPrice! : null;
+  double? get value => isHolding && price != null ? quantity! * price! : null;
+  double? get gain => value != null && cost != null ? value! - cost! : null;
+  double? get gainPct => gain != null && cost != null && cost! > 0 ? gain! / cost! * 100 : null;
+
+  /// Today's change in money for the whole holding.
+  double? get dayAmount {
+    if (!isHolding || price == null || changePct == null) return null;
+    final prev = price! / (1 + changePct! / 100);
+    return quantity! * (price! - prev);
+  }
+
+  /// Day change shown in tables: hidden when the close is stale.
+  double? get dayPct => stale ? null : changePct;
+}
 
 class Portfolio extends StatefulWidget {
   const Portfolio({super.key});
@@ -28,1997 +98,785 @@ class Portfolio extends StatefulWidget {
   State<Portfolio> createState() => _PortfolioState();
 }
 
-class _PortfolioState extends State<Portfolio>
-    with SingleTickerProviderStateMixin {
-  _SortOption _portfolioSort = _SortOption.nameAZ;
-  _SortOption _watchlistSort = _SortOption.nameAZ;
-  AnimationController? _shimmerController;
+class _PortfolioState extends State<Portfolio> {
+  _Sort _holdingSort = _Sort.nameAZ;
+  _Sort _watchSort = _Sort.nameAZ;
 
   @override
   void initState() {
     super.initState();
-    _shimmerController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _fetchInitialData();
+      if (mounted) _load();
     });
   }
 
-  @override
-  void dispose() {
-    _shimmerController?.dispose();
-    super.dispose();
-  }
-
-  Future<void> _fetchInitialData({bool forceRefresh = false}) async {
+  Future<void> _load({bool force = false}) async {
     final provider = context.read<PortfolioProvider>();
-    await provider.loadInitial(force: forceRefresh);
-    if (!mounted) return;
-    await _firePortfolioNotificationsFromProvider(provider);
-  }
-
-  Future<void> _onRefreshPortfolio() async {
-    if (!mounted) return;
-    final provider = context.read<PortfolioProvider>();
-
-    if (provider.availableMarketStocks.isEmpty) {
-      await provider.loadInitial(force: true);
-    } else {
+    if (force && provider.availableMarketStocks.isNotEmpty) {
       await provider.refreshAssets(force: true, showRefreshing: false);
+    } else {
+      await provider.loadInitial(force: force);
     }
-
-    if (!mounted) return;
-    await _firePortfolioNotificationsFromProvider(provider);
+    if (mounted) await _priceAlerts(provider);
   }
 
-  Future<void> _removePortfolioItem(String ticker) async {
-    final provider = context.read<PortfolioProvider>();
-    final res = await provider.removeFromPortfolioOptimistic(ticker: ticker);
-    if (!mounted) return;
-    if (res['status'] != 'success') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            res['detail'] ?? 'Failed to remove $ticker from portfolio',
-          ),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
-  Future<void> _removeWatchlistItem(String ticker) async {
-    final provider = context.read<PortfolioProvider>();
-    final res = await provider.removeFromWatchlistOptimistic(ticker: ticker);
-    if (!mounted) return;
-    if (res['status'] != 'success') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            res['detail'] ?? 'Failed to remove $ticker from watchlist',
-          ),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
-  Future<void> _firePortfolioNotifications(
-    List<_StockItem> items,
-    List<dynamic> rawItems,
-  ) async {
-    if (!mounted) return;
+  /// A 3% move in a holding raises one alert per stock per day.
+  Future<void> _priceAlerts(PortfolioProvider provider) async {
     final box = await Hive.openBox('user');
-    if (!mounted) return;
-    if (box.get('notif_price_movement', defaultValue: true) != true) return;
-
-    final provider = Provider.of<NotificationProvider>(context, listen: false);
-
-    for (int i = 0; i < rawItems.length; i++) {
-      final raw = rawItems[i];
-      if (raw['stale'] == true || raw['change_pct'] is! num) continue;
-      final double changePct = (raw['change_pct'] as num).toDouble();
-      if (changePct.abs() >= 3.0) {
-        final String ticker = raw['ticker'] as String;
-        final String changeStr = items[i].change;
-        await provider.addNotification(
-          title: 'Portfolio Price Alert',
-          body: '$ticker moved $changeStr today',
-          type: NotificationType.priceMovement,
-          ticker: ticker,
-        );
-      }
+    if (!mounted || box.get('notif_price_movement', defaultValue: true) != true) return;
+    final notifications = context.read<NotificationProvider>();
+    for (final raw in provider.portfolioRaw) {
+      final row = _Row.from(raw as Map);
+      final pct = row.dayPct;
+      if (pct == null || pct.abs() < 3) continue;
+      await notifications.addNotification(
+        title: 'Price move: ${row.symbol}',
+        body: '${row.symbol} closed ${Fmt.pct(pct)} at ${Fmt.money(row.price, currency: row.currency)} on ${Fmt.date(row.asOf)}.',
+        type: NotificationType.priceMovement,
+        ticker: row.symbol,
+      );
     }
   }
 
-  Future<void> _firePortfolioNotificationsFromProvider(
-    PortfolioProvider portfolioProvider,
-  ) async {
-    final rawItems = portfolioProvider.portfolioRaw;
-    if (rawItems.isEmpty) return;
-    final items = rawItems
-        .map((item) => _buildUIStockItem(item, isPortfolio: true))
-        .toList();
-    await _firePortfolioNotifications(items, rawItems);
-  }
-
-  // ── Convert API Data to UI Cards ──
-  _StockItem _buildUIStockItem(dynamic item, {required bool isPortfolio}) {
-    String symbol = item['ticker'];
-    final rawPrice = item['live_price'];
-    final double? price = rawPrice is num ? rawPrice.toDouble() : null;
-    final rawChange = item['change_pct'];
-    final double? changePct = rawChange is num ? rawChange.toDouble() : null;
-    final String currency = item['currency']?.toString() ?? 'NGN';
-    final DateTime? asOf = DateTime.tryParse(item['as_of']?.toString() ?? '');
-    final bool stale = item['stale'] == true;
-
-    final rawSpark = item['spark_data'];
-    final List<double> spark = rawSpark is List
-        ? rawSpark.whereType<num>().map((e) => e.toDouble()).toList()
-        : <double>[];
-
-    final bool isPositive = changePct != null && changePct >= 0;
-    final String changeStr = changePct == null || stale
-        ? '-'
-        : changePct == 0.0
-        ? "-"
-        : "${isPositive ? '+' : ''}${changePct.toStringAsFixed(2)}%";
-
-    // If portfolio, show total value. If watchlist, show stock name.
-    String subtitle = isPortfolio
-        ? "${(item['quantity'] as num).toStringAsFixed(0)} units @ ₦${(item['avg_buy_price'] as num).toStringAsFixed(2)}"
-        : "$symbol Plc";
-    final recency = price == null
-        ? 'Price unavailable'
-        : '${stale ? 'Stale close' : 'Daily close'} · ${asOf?.toIso8601String().split('T').first ?? 'date unavailable'}';
-    subtitle = '$subtitle · $recency';
-
-    // return _StockItem(
-    //   symbol: symbol,
-    //   name: subtitle,
-    //   price: '₦${price.toStringAsFixed(2)}',
-    //   change: changeStr,
-    //   isPositive: isPositive,
-    //   dotColor: isPositive ? Colors.green : Colors.red,
-    //   iconBg: const Color(0xFF1C1C1E),
-    //   iconLabel: symbol.substring(0, min(2, symbol.length)),
-    //   iconWidget: null,
-    //   sparkData: spark,
-    //   sparkColor: isPositive ? Colors.green : Colors.red,
-    // );
-    return _StockItem(
-      symbol: symbol,
-      name: subtitle,
-      price: price == null
-          ? 'Unavailable'
-          : '$currency ${price.toStringAsFixed(2)}',
-      change: changeStr,
-      isPositive: isPositive,
-      dotColor: changePct == null || stale
-          ? Colors.grey
-          : isPositive
-          ? Colors.green
-          : Colors.red,
-      iconBg: const Color(0xFF1C1C1E),
-      iconLabel: symbol.substring(0, min(2, symbol.length)),
-      iconWidget: null,
-      sparkData: spark,
-      sparkColor: changePct == null || stale
-          ? Colors.grey
-          : isPositive
-          ? Colors.green
-          : Colors.red,
-      // 🚨 NEW: Pass the raw numbers!
-      quantity: isPortfolio ? (item['quantity'] as num).toDouble() : null,
-      avgBuyPrice: isPortfolio
-          ? (item['avg_buy_price'] as num).toDouble()
-          : null,
-      marketPrice: price,
-      currency: currency,
-      asOf: asOf,
-      stale: stale,
-    );
-  }
-
-  // ── Sort Helper ──
-  List<_StockItem> _getSorted(List<_StockItem> items, _SortOption opt) {
-    final list = List<_StockItem>.from(items);
-    double parsePrice(String p) =>
-        double.tryParse(p.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0;
-    double parseChange(String c) {
-      if (c == '-') return 0;
-      return double.tryParse(c.replaceAll('%', '').replaceAll('+', '')) ?? 0;
+  List<_Row> _sorted(List<_Row> rows, _Sort sort) {
+    final list = List<_Row>.from(rows);
+    int byNum(double? a, double? b, {bool desc = true}) {
+      if (a == null && b == null) return 0;
+      if (a == null) return 1;
+      if (b == null) return -1;
+      return desc ? b.compareTo(a) : a.compareTo(b);
     }
 
-    switch (opt) {
-      case _SortOption.nameAZ:
+    switch (sort) {
+      case _Sort.nameAZ:
         list.sort((a, b) => a.symbol.compareTo(b.symbol));
-      case _SortOption.nameZA:
+      case _Sort.nameZA:
         list.sort((a, b) => b.symbol.compareTo(a.symbol));
-      case _SortOption.priceHigh:
-        list.sort((a, b) => parsePrice(b.price).compareTo(parsePrice(a.price)));
-      case _SortOption.priceLow:
-        list.sort((a, b) => parsePrice(a.price).compareTo(parsePrice(b.price)));
-      case _SortOption.gainers:
-        list.sort(
-          (a, b) => parseChange(b.change).compareTo(parseChange(a.change)),
-        );
-      case _SortOption.losers:
-        list.sort(
-          (a, b) => parseChange(a.change).compareTo(parseChange(b.change)),
-        );
+      case _Sort.priceHigh:
+        list.sort((a, b) => byNum(a.price, b.price));
+      case _Sort.priceLow:
+        list.sort((a, b) => byNum(a.price, b.price, desc: false));
+      case _Sort.gainers:
+        list.sort((a, b) => byNum(a.dayPct, b.dayPct));
+      case _Sort.losers:
+        list.sort((a, b) => byNum(a.dayPct, b.dayPct, desc: false));
     }
     return list;
   }
 
-  // ── Sort Sheet ──
-  void _showSortUnavailableMessage(String sectionLabel) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('No stocks in $sectionLabel yet. Add one first to sort.'),
-        duration: const Duration(seconds: 2),
+  Future<void> _chooseSort({required bool holdings}) async {
+    final current = holdings ? _holdingSort : _watchSort;
+    final picked = await showAppSheet<_Sort>(
+      context,
+      (ctx) => SheetFrame(
+        title: 'Sort ${holdings ? 'holdings' : 'watchlist'}',
+        padding: EdgeInsets.zero,
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            for (final s in _Sort.values) ...[
+              InkWell(
+                onTap: () => Navigator.pop(ctx, s),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: Gap.page, vertical: 14),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _sortLabels[s]!,
+                          style: ctx.text.bodyLarge?.copyWith(
+                            color: s == current ? ctx.pal.accent : null,
+                            fontWeight: s == current ? FontWeight.w600 : null,
+                          ),
+                        ),
+                      ),
+                      if (s == current) Icon(Icons.check, color: ctx.pal.accent, size: 20),
+                    ],
+                  ),
+                ),
+              ),
+              const Hairline(indent: Gap.page),
+            ],
+          ],
+        ),
       ),
+    );
+    if (picked == null) return;
+    setState(() => holdings ? _holdingSort = picked : _watchSort = picked);
+  }
+
+  Future<void> _add() async {
+    final choice = await showAppSheet<bool>(
+      context,
+      (ctx) => SheetFrame(
+        title: 'Add a stock',
+        padding: EdgeInsets.zero,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _choiceRow(ctx, 'To portfolio', 'A stock you own, with quantity and average price', true),
+            const Hairline(indent: Gap.page),
+            _choiceRow(ctx, 'To watchlist', 'A stock you want to follow', false),
+            const SizedBox(height: Gap.md),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    final provider = context.read<PortfolioProvider>();
+    if (provider.availableMarketStocks.isEmpty) {
+      showNotice(context, 'The NGX stock list is not loaded yet. Pull down to refresh.');
+      return;
+    }
+    final already = (choice ? provider.portfolioRaw : provider.watchlistRaw)
+        .map((e) => e['ticker'].toString())
+        .toList();
+    final stock = await showStockPicker(
+      context,
+      stocks: provider.availableMarketStocks,
+      disabled: already,
+      title: choice ? 'Add to portfolio' : 'Add to watchlist',
+    );
+    if (stock == null || !mounted) return;
+    if (choice) {
+      await _addHolding(stock);
+    } else {
+      final res = await provider.addToWatchlist(ticker: stock.symbol);
+      if (!mounted) return;
+      showNotice(
+        context,
+        res['status'] == 'success'
+            ? '${stock.symbol} added to your watchlist.'
+            : res['detail']?.toString() ?? "Couldn't add ${stock.symbol}.",
+      );
+    }
+  }
+
+  Widget _choiceRow(BuildContext ctx, String title, String body, bool value) => InkWell(
+    onTap: () => Navigator.pop(ctx, value),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Gap.page, vertical: 14),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: ctx.text.titleMedium),
+                const SizedBox(height: 2),
+                Text(body, style: ctx.text.bodySmall),
+              ],
+            ),
+          ),
+          Icon(Icons.chevron_right, color: ctx.pal.inkFaint),
+        ],
+      ),
+    ),
+  );
+
+  Future<void> _addHolding(MarketStock stock) async {
+    final qty = TextEditingController();
+    final price = TextEditingController(text: stock.price.toStringAsFixed(2));
+    String? error;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: Text('Add ${stock.symbol}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(stock.name, style: ctx.text.bodySmall),
+              const SizedBox(height: Gap.lg),
+              TextField(
+                controller: qty,
+                autofocus: true,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Quantity (shares)'),
+              ),
+              const SizedBox(height: Gap.md),
+              TextField(
+                controller: price,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  labelText: 'Average buy price (${Fmt.symbol(stock.currency).trim()})',
+                  helperText: 'Last close ${Fmt.money(stock.price, currency: stock.currency)} on ${Fmt.date(stock.asOf)}',
+                ),
+              ),
+              if (error != null) ...[
+                const SizedBox(height: Gap.sm),
+                Text(error!, style: ctx.text.bodySmall?.copyWith(color: ctx.pal.down)),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text('Cancel', style: TextStyle(color: ctx.pal.inkMuted)),
+            ),
+            TextButton(
+              onPressed: () {
+                final q = double.tryParse(qty.text.trim().replaceAll(',', ''));
+                final p = double.tryParse(price.text.trim().replaceAll(',', ''));
+                if (q == null || q <= 0 || p == null || p <= 0) {
+                  setLocal(() => error = 'Enter a quantity and price above zero.');
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final res = await context.read<PortfolioProvider>().addToPortfolio(
+      ticker: stock.symbol,
+      quantity: double.parse(qty.text.trim().replaceAll(',', '')),
+      avgBuyPrice: double.parse(price.text.trim().replaceAll(',', '')),
+    );
+    if (!mounted) return;
+    showNotice(
+      context,
+      res['status'] == 'success'
+          ? '${stock.symbol} added to your portfolio.'
+          : res['detail']?.toString() ?? "Couldn't add ${stock.symbol}.",
     );
   }
 
-  void _showSortSheet({required bool isPortfolio}) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF1A1A2E) : const Color(0xFFF2F4F7);
-    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
-    final current = isPortfolio ? _portfolioSort : _watchlistSort;
+  Future<bool> _confirmRemove(_Row row, {required bool holding}) => confirmAction(
+    context,
+    title: 'Remove ${row.symbol}?',
+    message: holding
+        ? 'This removes ${row.symbol} from your portfolio. It does not sell anything.'
+        : 'This removes ${row.symbol} from your watchlist.',
+    confirmLabel: 'Remove',
+    destructive: true,
+  );
 
-    final options = [
-      (_SortOption.nameAZ, 'Name A → Z', Icons.sort_by_alpha),
-      (_SortOption.nameZA, 'Name Z → A', Icons.sort_by_alpha),
-      (_SortOption.priceHigh, 'Price High → Low', Icons.arrow_downward),
-      (_SortOption.priceLow, 'Price Low → High', Icons.arrow_upward),
-      (_SortOption.gainers, 'Best Gainers', Icons.trending_up),
-      (_SortOption.losers, 'Worst Losers', Icons.trending_down),
-    ];
+  Future<void> _remove(_Row row, {required bool holding}) async {
+    final provider = context.read<PortfolioProvider>();
+    final res = holding
+        ? await provider.removeFromPortfolioOptimistic(ticker: row.symbol)
+        : await provider.removeFromWatchlistOptimistic(ticker: row.symbol);
+    if (!mounted || res['status'] == 'success') return;
+    showNotice(context, res['detail']?.toString() ?? "Couldn't remove ${row.symbol}.");
+  }
 
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Sort by',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: textColor,
-              ),
-            ),
-            const SizedBox(height: 12),
-            ...options.map((o) {
-              final isSelected = current == o.$1;
-              return ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(
-                  o.$3,
-                  color: isSelected ? const Color(0xFF0A3D62) : Colors.grey,
-                  size: 20,
-                ),
-                title: Text(
-                  o.$2,
-                  style: TextStyle(
-                    color: isSelected ? const Color(0xFF0A3D62) : textColor,
-                    fontWeight: isSelected
-                        ? FontWeight.bold
-                        : FontWeight.normal,
+  void _openHolding(_Row row, String name) {
+    showAppSheet<void>(context, (ctx) => _BreakdownSheet(row: row, name: name));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<PortfolioProvider>();
+    final holdings = provider.portfolioRaw.map((e) => _Row.from(e as Map)).toList();
+    final watch = provider.watchlistRaw.map((e) => _Row.from(e as Map)).toList();
+    final loading = provider.isLoading || provider.isRefreshing;
+    final scale = Sparkline.commonScale([...holdings, ...watch].map((r) => r.spark));
+
+    return Scaffold(
+      bottomNavigationBar: const BottomNavBar(currentIndex: 2),
+      body: SafeArea(
+        bottom: false,
+        child: RefreshIndicator(
+          color: context.pal.accent,
+          onRefresh: () => _load(force: true),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.only(bottom: Gap.xxl),
+            children: [
+              PageTitle(
+                'Portfolio',
+                actions: [
+                  TextButton.icon(
+                    onPressed: _add,
+                    icon: const Icon(Icons.add, size: 20),
+                    label: const Text('Add'),
                   ),
-                ),
-                trailing: isSelected
-                    ? const Icon(
-                        Icons.check,
-                        color: Color(0xFF0A3D62),
-                        size: 18,
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: Gap.page),
+                child: provider.hasError
+                    ? MessageBlock(
+                        title: 'Portfolio not loaded',
+                        body: "Couldn't reach the server. Check your connection and try again.",
+                        actionLabel: 'Try again',
+                        onAction: () => _load(force: true),
                       )
-                    : null,
-                onTap: () {
-                  setState(() {
-                    if (isPortfolio) {
-                      _portfolioSort = o.$1;
-                    } else {
-                      _watchlistSort = o.$1;
-                    }
-                  });
-                  Navigator.pop(ctx);
-                },
-              );
-            }),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── Action Sheet ("Add to Portfolio" vs "Watchlist") ──
-  void _showAddActionSheet(bool isDark) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF2A2D3E) : Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Add New Asset',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : const Color(0xFF1A1A2E),
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const HeavyRule(),
+                          if (loading)
+                            const _TableSkeleton(summary: true)
+                          else ...[
+                            _Summary(rows: holdings),
+                            SectionHead(
+                              'Holdings',
+                              trailing: holdings.length > 1
+                                  ? TextButton(
+                                      onPressed: () => _chooseSort(holdings: true),
+                                      child: const Text('Sort'),
+                                    )
+                                  : null,
+                            ),
+                            if (holdings.isEmpty)
+                              const MessageBlock(
+                                title: 'No holdings yet',
+                                body: 'Tap Add to record a stock you own. Prices update from verified NGX closes.',
+                              )
+                            else ...[
+                              const _Header(holding: true),
+                              for (final r in _sorted(holdings, _holdingSort))
+                                _dismissible(
+                                  r,
+                                  holding: true,
+                                  child: _HoldingRow(
+                                    row: r,
+                                    scale: scale,
+                                    onTap: () => _openHolding(r, provider.nameFor(r.symbol)),
+                                  ),
+                                ),
+                            ],
+                          ],
+                          SectionHead(
+                            'Watchlist',
+                            trailing: !loading && watch.length > 1
+                                ? TextButton(
+                                    onPressed: () => _chooseSort(holdings: false),
+                                    child: const Text('Sort'),
+                                  )
+                                : null,
+                          ),
+                          if (loading)
+                            const _TableSkeleton()
+                          else if (watch.isEmpty)
+                            const MessageBlock(
+                              title: 'Nothing on your watchlist',
+                              body: 'Tap Add to follow a stock without recording a holding.',
+                            )
+                          else ...[
+                            const _Header(holding: false),
+                            for (final r in _sorted(watch, _watchSort))
+                              _dismissible(
+                                r,
+                                holding: false,
+                                child: _WatchRow(
+                                  row: r,
+                                  name: provider.nameFor(r.symbol),
+                                  scale: scale,
+                                  onAsk: () => showAskSheet(
+                                    context,
+                                    about: AskContext(
+                                      ticker: r.symbol,
+                                      price: r.price,
+                                      currency: r.currency,
+                                      asOf: r.asOf,
+                                      stale: r.stale,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                          if (!loading && (holdings.isNotEmpty || watch.isNotEmpty)) ...[
+                            const SizedBox(height: Gap.md),
+                            Text(
+                              'Charts show the last seven closes on one shared scale '
+                              '(±${Fmt.number(scale, decimals: 0)}% from each first close), '
+                              'so small moves look small. Swipe a row left to remove it.',
+                              style: context.text.bodySmall,
+                            ),
+                          ],
+                        ],
+                      ),
               ),
-            ),
-            const SizedBox(height: 20),
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0A3D62).withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.pie_chart, color: Color(0xFF0A3D62)),
-              ),
-              title: const Text(
-                'Add to Portfolio',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              subtitle: const Text(
-                'Track stocks you currently own',
-                style: TextStyle(fontSize: 12),
-              ),
-              onTap: () {
-                Navigator.pop(ctx);
-                _openStockPicker(isDark, isPortfolio: true);
-              },
-            ),
-            const Divider(),
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.visibility, color: Colors.orange),
-              ),
-              title: const Text(
-                'Add to Watchlist',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              subtitle: const Text(
-                'Monitor stocks without buying',
-                style: TextStyle(fontSize: 12),
-              ),
-              onTap: () {
-                Navigator.pop(ctx);
-                _openStockPicker(isDark, isPortfolio: false);
-              },
-            ),
-            const SizedBox(height: 20),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── Stock Picker ──
-  void _openStockPicker(bool isDark, {required bool isPortfolio}) {
-    final portfolioProvider = context.read<PortfolioProvider>();
-    List<String> alreadySelected = isPortfolio
-        ? portfolioProvider.portfolioRaw
-              .map((e) => e['ticker'] as String)
-              .toList()
-        : portfolioProvider.watchlistRaw
-              .map((e) => e['ticker'] as String)
-              .toList();
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _StockPickerModal(
-        isDark: isDark,
-        stocksList: portfolioProvider.availableMarketStocks,
-        alreadySelected: alreadySelected,
-        onSelected: (stock) async {
-          Navigator.pop(context); // Close picker
-
-          if (isPortfolio) {
-            _showQuantityDialog(stock, isDark);
-          } else {
-            final res = await portfolioProvider.addToWatchlist(
-              ticker: stock.symbol,
-            );
-            if (!mounted) return;
-            if (res['status'] == 'success') {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('${stock.symbol} added to Watchlist!'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-              await _firePortfolioNotificationsFromProvider(portfolioProvider);
-            } else {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(res['detail'] ?? 'Error'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          }
-        },
-      ),
-    );
-  }
-
-  // ── Quantity Dialog (For Portfolio) ──
-  void _showQuantityDialog(NigerianStock stock, bool isDark) {
-    final qtyController = TextEditingController();
-    final priceController = TextEditingController(
-      text: stock.price.toStringAsFixed(2),
-    );
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: isDark ? const Color(0xFF2A2D3E) : Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(
-          'Add ${stock.symbol}',
-          style: TextStyle(
-            color: isDark ? Colors.white : const Color(0xFF1A1A2E),
-            fontWeight: FontWeight.bold,
+            ],
           ),
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: qtyController,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              style: TextStyle(
-                color: isDark ? Colors.white : const Color(0xFF1A1A2E),
-              ),
-              decoration: InputDecoration(
-                labelText: 'Quantity (units)',
-                filled: true,
-                fillColor: isDark
-                    ? const Color(0xFF1A1A2E)
-                    : const Color(0xFFF2F4F7),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: priceController,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              style: TextStyle(
-                color: isDark ? Colors.white : const Color(0xFF1A1A2E),
-              ),
-              decoration: InputDecoration(
-                labelText: 'Average Buy Price (₦)',
-                filled: true,
-                fillColor: isDark
-                    ? const Color(0xFF1A1A2E)
-                    : const Color(0xFFF2F4F7),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+      ),
+    );
+  }
+
+  Widget _dismissible(_Row r, {required bool holding, required Widget child}) => Dismissible(
+    key: ValueKey('${holding ? 'h' : 'w'}_${r.symbol}'),
+    direction: DismissDirection.endToStart,
+    confirmDismiss: (_) => _confirmRemove(r, holding: holding),
+    onDismissed: (_) => _remove(r, holding: holding),
+    background: Container(
+      color: context.pal.down,
+      alignment: Alignment.centerRight,
+      padding: const EdgeInsets.only(right: Gap.lg),
+      child: Text('Remove', style: context.text.labelLarge?.copyWith(color: context.pal.paper)),
+    ),
+    child: child,
+  );
+}
+
+/// Total value, day change and return for holdings with a current close.
+class _Summary extends StatelessWidget {
+  final List<_Row> rows;
+  const _Summary({required this.rows});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.text;
+    final p = context.pal;
+    final included = rows.where((r) => r.isHolding && r.priced).toList();
+    final excluded = rows.where((r) => r.isHolding && !r.priced).toList();
+    final value = included.fold<double>(0, (s, r) => s + r.value!);
+    final cost = included.fold<double>(0, (s, r) => s + r.cost!);
+    final day = included.fold<double>(0, (s, r) => s + (r.dayAmount ?? 0));
+    final prevValue = value - day;
+    final dayPct = prevValue > 0 ? day / prevValue * 100 : null;
+    final gain = value - cost;
+    final gainPct = cost > 0 ? gain / cost * 100 : null;
+    final latest = included
+        .map((r) => r.asOf)
+        .whereType<DateTime>()
+        .fold<DateTime?>(null, (a, b) => a == null || b.isAfter(a) ? b : a);
+    final currency = included.isNotEmpty ? included.first.currency : 'NGN';
+
+    if (rows.isEmpty) return const SizedBox(height: Gap.sm);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: Gap.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Kicker('Total value'),
+          const SizedBox(height: 6),
+          Text(
+            included.isEmpty ? Fmt.missing : Fmt.money(value, currency: currency),
+            style: AppType.figure(size: 34, color: p.ink),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF0A3D62),
-            ),
-            onPressed: () async {
-              final qty = double.tryParse(qtyController.text.trim());
-              final price = double.tryParse(priceController.text.trim());
-
-              if (qty == null || price == null) return;
-
-              Navigator.pop(ctx); // Close dialog
-              final portfolioProvider = context.read<PortfolioProvider>();
-              final res = await portfolioProvider.addToPortfolio(
-                ticker: stock.symbol,
-                quantity: qty,
-                avgBuyPrice: price,
-              );
-
-              if (!mounted) return;
-              if (res['status'] == 'success') {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('${stock.symbol} added to Portfolio!'),
-                    backgroundColor: Colors.green,
+          const SizedBox(height: Gap.md),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _stat(context, 'Day change', day, dayPct, currency, included.isEmpty)),
+              const SizedBox(width: Gap.md),
+              Expanded(child: _stat(context, 'Total return', gain, gainPct, currency, included.isEmpty)),
+            ],
+          ),
+          const SizedBox(height: Gap.md),
+          Text(
+            [
+              'Cost ${included.isEmpty ? Fmt.missing : Fmt.money(cost, currency: currency)}',
+              '${included.length} of ${rows.length} holdings priced',
+              if (latest != null) 'closes as of ${Fmt.date(latest)}',
+            ].join(' · '),
+            style: t.bodySmall,
+          ),
+          if (excluded.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: 'Not counted: ',
+                    style: TextStyle(color: p.warn, fontWeight: FontWeight.w600),
                   ),
-                );
-                await _firePortfolioNotificationsFromProvider(
-                  portfolioProvider,
-                );
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(res['detail'] ?? 'Error'),
-                    backgroundColor: Colors.red,
+                  TextSpan(
+                    text: '${excluded.map((r) => r.symbol).join(', ')} '
+                        '(${excluded.any((r) => r.price == null) ? 'no verified close' : 'stale close'}).',
                   ),
-                );
-              }
-            },
-            child: const Text('Add', style: TextStyle(color: Colors.white)),
-          ),
+                ],
+              ),
+              style: t.bodySmall,
+            ),
+          ],
         ],
       ),
     );
   }
 
-  // ── Asset Breakdown Sheet ──
-  void _showPortfolioDetailsSheet(_StockItem stock, bool isDark) {
-    if (stock.quantity == null || stock.avgBuyPrice == null) return;
-
-    final bgColor = isDark ? const Color(0xFF1A1A2E) : const Color(0xFFF2F4F7);
-    final cardColor = isDark ? const Color(0xFF2A2D3E) : Colors.white;
-    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
-
-    // 🧮 Do the Math!
-    final double? currentPrice = stock.marketPrice;
-    double totalCost = stock.quantity! * stock.avgBuyPrice!;
-    final double? currentValue = currentPrice == null
-        ? null
-        : stock.quantity! * currentPrice;
-    final double? profitLoss = currentValue == null
-        ? null
-        : currentValue - totalCost;
-    final double? profitLossPct = profitLoss == null
-        ? null
-        : totalCost > 0
-        ? (profitLoss / totalCost) * 100
-        : 0.0;
-
-    bool inProfit = (profitLoss ?? 0) >= 0;
-    Color pnlColor = inProfit ? Colors.green : Colors.red;
-    String sign = inProfit ? "+" : "";
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Drag Handle
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey[400],
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // Header
-            Text(
-              '${stock.symbol} Asset Breakdown',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: textColor,
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Current Value (Big Number)
-            Text(
-              "Current Value",
-              style: TextStyle(color: Colors.grey[500], fontSize: 14),
-            ),
-            Text(
-              currentValue == null
-                  ? 'Unavailable'
-                  : "${stock.currency} ${currentValue.toStringAsFixed(2)}",
-              style: TextStyle(
-                fontSize: 36,
-                fontWeight: FontWeight.bold,
-                color: textColor,
-              ),
-            ),
-
-            // Profit/Loss Badge
-            if (profitLoss != null)
-              Container(
-                margin: const EdgeInsets.only(top: 8),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: pnlColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  "$sign${stock.currency} ${profitLoss.abs().toStringAsFixed(2)} ($sign${profitLossPct!.toStringAsFixed(2)}%)",
-                  style: TextStyle(
-                    color: pnlColor,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-            if (profitLoss == null)
-              Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: Text(
-                  'Profit and loss are unavailable until a verified close is available.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey[500]),
-                ),
-              ),
-            const SizedBox(height: 30),
-
-            // Stats Grid
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: cardColor,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 10,
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  _buildStatRow(
-                    "Total Investment",
-                    "${stock.currency} ${totalCost.toStringAsFixed(2)}",
-                    textColor,
-                  ),
-                  const Divider(height: 24),
-                  _buildStatRow(
-                    "Quantity Owned",
-                    "${stock.quantity?.toStringAsFixed(0)} units",
-                    textColor,
-                  ),
-                  const Divider(height: 24),
-                  _buildStatRow(
-                    "Average Buy Price",
-                    "${stock.currency} ${stock.avgBuyPrice?.toStringAsFixed(2)}",
-                    textColor,
-                  ),
-                  const Divider(height: 24),
-                  _buildStatRow(
-                    "Current Market Price",
-                    currentPrice == null
-                        ? 'Unavailable'
-                        : "${stock.currency} ${currentPrice.toStringAsFixed(2)}",
-                    textColor,
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 30),
-
-            // Ask AI Button
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0A3D62),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                icon: const Icon(
-                  Icons.auto_awesome,
-                  color: Colors.white,
-                  size: 20,
-                ),
-                label: Text(
-                  "Ask AI about ${stock.symbol}",
-                  style: const TextStyle(color: Colors.white, fontSize: 16),
-                ),
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    backgroundColor: Colors.transparent,
-                    builder: (context) => AiChatSheet(
-                      isDark: isDark,
-                      currentTicker: stock.symbol,
-                    ), // Passes context!
-                  );
-                },
-              ),
-            ),
-            SizedBox(height: MediaQuery.of(context).padding.bottom + 10),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatRow(String label, String value, Color textColor) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _stat(BuildContext context, String label, double amount, double? pct, String currency, bool empty) {
+    final t = context.text;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: TextStyle(color: Colors.grey[500], fontSize: 14)),
-        Text(
-          value,
-          style: TextStyle(
-            color: textColor,
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
-          ),
-        ),
+        Kicker(label),
+        const SizedBox(height: 4),
+        if (empty)
+          Text(Fmt.missing, style: t.titleMedium)
+        else ...[
+          ChangeText(pct: null, amount: amount, currency: currency, style: t.titleMedium),
+          ChangeText(pct: pct, arrow: false, style: t.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
+        ],
       ],
-    );
-  }
-
-  Widget _buildNetworkError(Color textColor) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.wifi_off_rounded, size: 56, color: Colors.grey[400]),
-            const SizedBox(height: 16),
-            Text(
-              'Could not connect to server',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: textColor,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Check your connection and try again.',
-              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: () => _fetchInitialData(forceRefresh: true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0A3D62),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 32,
-                  vertical: 12,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: const Text(
-                'Retry',
-                style: TextStyle(color: Colors.white, fontSize: 15),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final portfolioProvider = context.watch<PortfolioProvider>();
-    final isLoading = portfolioProvider.isLoading;
-    final isRefreshing = portfolioProvider.isRefreshing;
-    final hasError = portfolioProvider.hasError;
-    final portfolioStocks = portfolioProvider.portfolioRaw
-        .map((item) => _buildUIStockItem(item, isPortfolio: true))
-        .toList();
-    final watchlistStocks = portfolioProvider.watchlistRaw
-        .map((item) => _buildUIStockItem(item, isPortfolio: false))
-        .toList();
-
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF1A1A2E) : const Color(0xFFF2F4F7);
-    final cardColor = isDark ? const Color(0xFF2A2D3E) : Colors.white;
-    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
-
-    return Scaffold(
-      extendBody: true,
-      backgroundColor: bgColor,
-      floatingActionButton: SizedBox(
-        width: 42,
-        height: 42,
-        child: FloatingActionButton(
-          elevation: 4,
-          highlightElevation: 6,
-          backgroundColor: const Color(0xFF0A3D62),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          onPressed: () {
-            showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              backgroundColor: Colors.transparent,
-              builder: (context) => AiChatSheet(isDark: isDark),
-            );
-          },
-          child: const Icon(
-            Icons.smart_toy_outlined,
-            color: Colors.white,
-            size: 22,
-          ),
-        ),
-      ),
-
-      bottomNavigationBar: const BottomNavBar(currentIndex: 2),
-      body: SafeArea(
-        bottom: false,
-        child: RefreshIndicator(
-          onRefresh: _onRefreshPortfolio,
-          child: hasError
-              ? ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  children: [
-                    SizedBox(
-                      height: MediaQuery.of(context).size.height * 0.75,
-                      child: _buildNetworkError(textColor),
-                    ),
-                  ],
-                )
-              : CustomScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  slivers: [
-                    // ── Header ──
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Portfolio',
-                                  style: TextStyle(
-                                    fontSize: 26,
-                                    fontWeight: FontWeight.bold,
-                                    color: textColor,
-                                  ),
-                                ),
-                                const Text(
-                                  'HybStockAdvisor',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: Color(0xFF0A3D62),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const Spacer(),
-                            GestureDetector(
-                              onTap: () => _showAddActionSheet(isDark),
-                              child: Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: cardColor,
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.07),
-                                      blurRadius: 6,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                child: const Icon(
-                                  Icons.add,
-                                  color: Color(0xFF0A3D62),
-                                  size: 22,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    const SliverToBoxAdapter(child: SizedBox(height: 24)),
-
-                    // ── Your Stocks Header ──
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Your Stocks',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: textColor,
-                              ),
-                            ),
-                            GestureDetector(
-                              onTap: () {
-                                if (portfolioStocks.isEmpty) {
-                                  _showSortUnavailableMessage('portfolio');
-                                  return;
-                                }
-                                _showSortSheet(isPortfolio: true);
-                              },
-                              child: const Text(
-                                'Sort by',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Color(0xFF0A3D62),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    const SliverToBoxAdapter(child: SizedBox(height: 12)),
-
-                    // ── Stock List (Portfolio) ──
-                    if ((isLoading || isRefreshing) &&
-                        _shimmerController != null)
-                      SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (_, __) => Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-                            child: _ShimmerCard(
-                              animation: _shimmerController!,
-                              isDark: isDark,
-                              cardColor: cardColor,
-                            ),
-                          ),
-                          childCount: 3,
-                        ),
-                      )
-                    else if (portfolioStocks.isEmpty)
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 32,
-                          ),
-                          child: Center(
-                            child: Column(
-                              children: [
-                                Icon(
-                                  Icons.bar_chart_outlined,
-                                  size: 48,
-                                  color: Colors.grey[400],
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  'No stocks in portfolio.',
-                                  style: TextStyle(color: Colors.grey[500]),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  'Tap + to add your first stock.',
-                                  style: TextStyle(
-                                    color: Colors.grey[400],
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      )
-                    else
-                      Builder(
-                        builder: (context) {
-                          final sorted = _getSorted(
-                            portfolioStocks,
-                            _portfolioSort,
-                          );
-                          return SliverList(
-                            delegate: SliverChildBuilderDelegate((
-                              context,
-                              index,
-                            ) {
-                              final stock = sorted[index];
-                              return Dismissible(
-                                key: ValueKey('portfolio_${stock.symbol}'),
-                                direction: DismissDirection.endToStart,
-                                confirmDismiss: (_) async {
-                                  return await showDialog<bool>(
-                                        context: context,
-                                        builder: (ctx) => AlertDialog(
-                                          backgroundColor: cardColor,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              16,
-                                            ),
-                                          ),
-                                          title: Text(
-                                            'Remove ${stock.symbol}?',
-                                            style: TextStyle(color: textColor),
-                                          ),
-                                          content: Text(
-                                            'Remove ${stock.name} from your portfolio?',
-                                            style: TextStyle(
-                                              color: Colors.grey[500],
-                                              fontSize: 13,
-                                            ),
-                                          ),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(ctx, false),
-                                              child: Text(
-                                                'Cancel',
-                                                style: TextStyle(
-                                                  color: Colors.grey[500],
-                                                ),
-                                              ),
-                                            ),
-                                            TextButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(ctx, true),
-                                              child: const Text(
-                                                'Remove',
-                                                style: TextStyle(
-                                                  color: Colors.red,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ) ??
-                                      false;
-                                },
-                                onDismissed: (_) =>
-                                    _removePortfolioItem(stock.symbol),
-                                background: Container(
-                                  margin: const EdgeInsets.fromLTRB(
-                                    20,
-                                    0,
-                                    20,
-                                    10,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red.withOpacity(0.85),
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  alignment: Alignment.centerRight,
-                                  padding: const EdgeInsets.only(right: 20),
-                                  child: const Icon(
-                                    Icons.delete_outline,
-                                    color: Colors.white,
-                                    size: 26,
-                                  ),
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    20,
-                                    0,
-                                    20,
-                                    10,
-                                  ),
-                                  child: _StockCard(
-                                    stock: stock,
-                                    isDark: isDark,
-                                    cardColor: cardColor,
-                                    textColor: textColor,
-                                    // 🚨 NEW: Trigger the bottom sheet!
-                                    onTap: () {
-                                      if (stock.quantity != null) {
-                                        _showPortfolioDetailsSheet(
-                                          stock,
-                                          isDark,
-                                        );
-                                      }
-                                    },
-                                  ),
-                                ),
-                                // child: Padding(
-                                //   padding: const EdgeInsets.fromLTRB(
-                                //     20,
-                                //     0,
-                                //     20,
-                                //     10,
-                                //   ),
-                                //   child: _StockCard(
-                                //     stock: stock,
-                                //     isDark: isDark,
-                                //     cardColor: cardColor,
-                                //     textColor: textColor,
-                                //   ),
-                                // ),
-                              );
-                            }, childCount: sorted.length),
-                          );
-                        },
-                      ),
-
-                    const SliverToBoxAdapter(child: SizedBox(height: 24)),
-
-                    // ── Your Watchlist Header ──
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Your Watchlist',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: textColor,
-                              ),
-                            ),
-                            GestureDetector(
-                              onTap: () {
-                                if (watchlistStocks.isEmpty) {
-                                  _showSortUnavailableMessage('watchlist');
-                                  return;
-                                }
-                                _showSortSheet(isPortfolio: false);
-                              },
-                              child: const Text(
-                                'Sort by',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Color(0xFF0A3D62),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    const SliverToBoxAdapter(child: SizedBox(height: 12)),
-
-                    // ── Watch List ──
-                    if ((isLoading || isRefreshing) &&
-                        _shimmerController != null)
-                      SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (_, __) => Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-                            child: _ShimmerCard(
-                              animation: _shimmerController!,
-                              isDark: isDark,
-                              cardColor: cardColor,
-                            ),
-                          ),
-                          childCount: 3,
-                        ),
-                      )
-                    else if (watchlistStocks.isEmpty)
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 32,
-                          ),
-                          child: Center(
-                            child: Column(
-                              children: [
-                                Icon(
-                                  Icons.visibility_off,
-                                  size: 48,
-                                  color: Colors.grey[400],
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  'Watchlist is empty.',
-                                  style: TextStyle(color: Colors.grey[500]),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  'Tap + to add your first stock.',
-                                  style: TextStyle(
-                                    color: Colors.grey[400],
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      )
-                    else
-                      Builder(
-                        builder: (context) {
-                          final sorted = _getSorted(
-                            watchlistStocks,
-                            _watchlistSort,
-                          );
-                          return SliverList(
-                            delegate: SliverChildBuilderDelegate((
-                              context,
-                              index,
-                            ) {
-                              final stock = sorted[index];
-                              return Dismissible(
-                                key: ValueKey('watchlist_${stock.symbol}'),
-                                direction: DismissDirection.endToStart,
-                                confirmDismiss: (_) async {
-                                  return await showDialog<bool>(
-                                        context: context,
-                                        builder: (ctx) => AlertDialog(
-                                          backgroundColor: cardColor,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              16,
-                                            ),
-                                          ),
-                                          title: Text(
-                                            'Remove ${stock.symbol}?',
-                                            style: TextStyle(color: textColor),
-                                          ),
-                                          content: Text(
-                                            'Remove ${stock.name} from your watchlist?',
-                                            style: TextStyle(
-                                              color: Colors.grey[500],
-                                              fontSize: 13,
-                                            ),
-                                          ),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(ctx, false),
-                                              child: Text(
-                                                'Cancel',
-                                                style: TextStyle(
-                                                  color: Colors.grey[500],
-                                                ),
-                                              ),
-                                            ),
-                                            TextButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(ctx, true),
-                                              child: const Text(
-                                                'Remove',
-                                                style: TextStyle(
-                                                  color: Colors.red,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ) ??
-                                      false;
-                                },
-                                onDismissed: (_) =>
-                                    _removeWatchlistItem(stock.symbol),
-                                background: Container(
-                                  margin: const EdgeInsets.fromLTRB(
-                                    20,
-                                    0,
-                                    20,
-                                    10,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red.withOpacity(0.85),
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  alignment: Alignment.centerRight,
-                                  padding: const EdgeInsets.only(right: 20),
-                                  child: const Icon(
-                                    Icons.delete_outline,
-                                    color: Colors.white,
-                                    size: 26,
-                                  ),
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    20,
-                                    0,
-                                    20,
-                                    10,
-                                  ),
-                                  child: _StockCard(
-                                    stock: stock,
-                                    isDark: isDark,
-                                    cardColor: cardColor,
-                                    textColor: textColor,
-                                  ),
-                                ),
-                              );
-                            }, childCount: sorted.length),
-                          );
-                        },
-                      ),
-
-                    const SliverToBoxAdapter(child: SizedBox(height: 120)),
-                  ],
-                ),
-        ),
-      ),
     );
   }
 }
 
-// ─────────────────────────────────────────────
-// Stock Card
-// ─────────────────────────────────────────────
-// class _StockCard extends StatelessWidget {
-//   final _StockItem stock;
-//   final bool isDark;
-//   final Color cardColor;
-//   final Color textColor;
+/// Column heads for the dense tables.
+class _Header extends StatelessWidget {
+  final bool holding;
+  const _Header({required this.holding});
 
-//   const _StockCard({
-//     required this.stock,
-//     required this.isDark,
-//     required this.cardColor,
-//     required this.textColor,
-//   });
-
-//   @override
-//   Widget build(BuildContext context) {
-//     // Dynamic chart scaling for the sparkline
-//     double maxPrice = stock.sparkData.isNotEmpty
-//         ? stock.sparkData.reduce((a, b) => max(a, b))
-//         : 100;
-//     double minPrice = stock.sparkData.isNotEmpty
-//         ? stock.sparkData.reduce((a, b) => min(a, b))
-//         : 0;
-//     if (maxPrice == minPrice) {
-//       maxPrice *= 1.05;
-//       minPrice *= 0.95;
-//     }
-//     double padding = (maxPrice - minPrice) * 0.2;
-
-//     return Container(
-//       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-//       decoration: BoxDecoration(
-//         color: cardColor,
-//         borderRadius: BorderRadius.circular(16),
-//         boxShadow: [
-//           BoxShadow(
-//             color: Colors.black.withOpacity(0.05),
-//             blurRadius: 6,
-//             offset: const Offset(0, 2),
-//           ),
-//         ],
-//       ),
-//       child: Row(
-//         children: [
-//           // Icon
-//           Container(
-//             width: 44,
-//             height: 44,
-//             decoration: BoxDecoration(
-//               color: stock.iconBg,
-//               borderRadius: BorderRadius.circular(10),
-//             ),
-//             child: Center(
-//               child: Text(
-//                 stock.iconLabel,
-//                 style: TextStyle(
-//                   fontWeight: FontWeight.bold,
-//                   fontSize: 14,
-//                   color: Colors.white,
-//                 ),
-//               ),
-//             ),
-//           ),
-//           const SizedBox(width: 12),
-//           // Symbol + Name + dot
-//           Expanded(
-//             flex: 2,
-//             child: Column(
-//               crossAxisAlignment: CrossAxisAlignment.start,
-//               children: [
-//                 Row(
-//                   children: [
-//                     Text(
-//                       stock.symbol,
-//                       style: TextStyle(
-//                         fontWeight: FontWeight.bold,
-//                         fontSize: 15,
-//                         color: textColor,
-//                       ),
-//                     ),
-//                     const SizedBox(width: 6),
-//                     Container(
-//                       width: 7,
-//                       height: 7,
-//                       decoration: BoxDecoration(
-//                         color: stock.dotColor,
-//                         shape: BoxShape.circle,
-//                       ),
-//                     ),
-//                   ],
-//                 ),
-//                 const SizedBox(height: 2),
-//                 Text(
-//                   stock.name,
-//                   style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-//                   overflow: TextOverflow.ellipsis,
-//                 ),
-//               ],
-//             ),
-//           ),
-//           const SizedBox(width: 10),
-//           // Sparkline
-//           Expanded(
-//             flex: 2,
-//             child: SizedBox(
-//               height: 40,
-//               child: LineChart(
-//                 LineChartData(
-//                   minX: 0,
-//                   maxX: (stock.sparkData.length - 1).toDouble(),
-//                   minY: minPrice - padding,
-//                   maxY: maxPrice + padding,
-//                   gridData: FlGridData(show: false),
-//                   borderData: FlBorderData(show: false),
-//                   titlesData: FlTitlesData(show: false),
-//                   lineTouchData: LineTouchData(enabled: false),
-//                   lineBarsData: [
-//                     LineChartBarData(
-//                       spots: stock.sparkData
-//                           .asMap()
-//                           .entries
-//                           .map((e) => FlSpot(e.key.toDouble(), e.value))
-//                           .toList(),
-//                       isCurved: true,
-//                       color: stock.sparkColor,
-//                       barWidth: 2,
-//                       isStrokeCapRound: true,
-//                       dotData: FlDotData(show: false),
-//                       belowBarData: BarAreaData(show: false),
-//                     ),
-//                   ],
-//                 ),
-//               ),
-//             ),
-//           ),
-//           const SizedBox(width: 10),
-//           // Price + Change
-//           Column(
-//             crossAxisAlignment: CrossAxisAlignment.end,
-//             children: [
-//               Text(
-//                 stock.price,
-//                 style: TextStyle(
-//                   fontWeight: FontWeight.bold,
-//                   fontSize: 14,
-//                   color: textColor,
-//                 ),
-//               ),
-//               const SizedBox(height: 2),
-//               Text(
-//                 stock.change,
-//                 style: TextStyle(
-//                   fontSize: 12,
-//                   fontWeight: FontWeight.w600,
-//                   color: stock.isPositive ? Colors.green : Colors.red,
-//                 ),
-//               ),
-//             ],
-//           ),
-//         ],
-//       ),
-//     );
-//   }
-// }
-// ─────────────────────────────────────────────
-// Shimmer Card Placeholder
-// ─────────────────────────────────────────────
-class _ShimmerCard extends StatelessWidget {
-  final Animation<double> animation;
-  final bool isDark;
-  final Color cardColor;
-
-  const _ShimmerCard({
-    required this.animation,
-    required this.isDark,
-    required this.cardColor,
-  });
+  /// Column head: one line, or two stacked to mirror two-line rows.
+  Widget _head(String top, [String? bottom]) => Column(
+    crossAxisAlignment: CrossAxisAlignment.end,
+    mainAxisSize: MainAxisSize.min,
+    children: [Kicker(top), if (bottom != null) Kicker(bottom)],
+  );
 
   @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (_, __) {
-        final highlightColor = isDark
-            ? const Color(0xFF3A3D4E)
-            : const Color(0xFFEAEAEA);
-        final baseColor = isDark
-            ? const Color(0xFF1E2030)
-            : const Color(0xFFD4D4D4);
-
-        final gradient = LinearGradient(
-          begin: Alignment(-1.5 + animation.value * 3.0, 0),
-          end: Alignment(-0.5 + animation.value * 3.0, 0),
-          colors: [baseColor, highlightColor, baseColor],
-        );
-
-        Widget box(double w, double h, {double radius = 8}) => Container(
-          width: w,
-          height: h,
-          decoration: BoxDecoration(
-            gradient: gradient,
-            borderRadius: BorderRadius.circular(radius),
-          ),
-        );
-
-        final glassCardColor = isDark
-            ? Colors.white.withOpacity(0.04)
-            : Colors.white.withOpacity(0.75);
-        final glassBorderColor = isDark
-            ? Colors.white.withOpacity(0.08)
-            : Colors.white.withOpacity(0.35);
-        final glassCardDecoration = BoxDecoration(
-          color: glassCardColor,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: glassBorderColor, width: 1.2),
-          boxShadow: [
-            BoxShadow(
-              color: isDark ? Colors.black26 : Colors.black.withOpacity(0.04),
-              blurRadius: 12,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        );
-
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          decoration: glassCardDecoration,
-          child: Row(
-            children: [
-              box(44, 44, radius: 10),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 5,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    box(80, 13),
-                    const SizedBox(height: 7),
-                    box(120, 11),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              box(60, 40, radius: 6),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [box(58, 13), const SizedBox(height: 7), box(40, 11)],
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-// ─────────────────────────────────────────────
-// Stock Card (With Auto-Scrolling Text)
-// ─────────────────────────────────────────────
-class _StockCard extends StatelessWidget {
-  final _StockItem stock;
-  final bool isDark;
-  final Color cardColor;
-  final Color textColor;
-  final VoidCallback? onTap;
-
-  const _StockCard({
-    required this.stock,
-    required this.isDark,
-    required this.cardColor,
-    required this.textColor,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // Dynamic chart scaling for the sparkline
-    double maxPrice = stock.sparkData.isNotEmpty
-        ? stock.sparkData.reduce((a, b) => max(a, b))
-        : 100;
-    double minPrice = stock.sparkData.isNotEmpty
-        ? stock.sparkData.reduce((a, b) => min(a, b))
-        : 0;
-    if (maxPrice == minPrice) {
-      maxPrice *= 1.05;
-      minPrice *= 0.95;
-    }
-    double padding = (maxPrice - minPrice) * 0.2;
-
-    final glassCardColor = isDark
-        ? Colors.white.withOpacity(0.04)
-        : Colors.white.withOpacity(0.75);
-    final glassBorderColor = isDark
-        ? Colors.white.withOpacity(0.08)
-        : Colors.white.withOpacity(0.35);
-    final glassCardDecoration = BoxDecoration(
-      color: glassCardColor,
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: glassBorderColor, width: 1.2),
-      boxShadow: [
-        BoxShadow(
-          color: isDark ? Colors.black26 : Colors.black.withOpacity(0.04),
-          blurRadius: 12,
-          offset: const Offset(0, 3),
-        ),
-      ],
-    );
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        decoration: glassCardDecoration,
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Padding(
+        padding: const EdgeInsets.only(top: 2, bottom: 6),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            // Icon
-            StockLogo(symbol: stock.symbol),
-            const SizedBox(width: 12),
+            Expanded(child: Kicker(holding ? 'Holding' : 'Stock')),
+            const SizedBox(width: 64, child: Kicker('7 days')),
+            SizedBox(
+              width: 92,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: holding ? _head('Last', 'Value') : _head('Last'),
+              ),
+            ),
+            SizedBox(
+              width: 72,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: holding ? _head('Day', 'Return') : _head('Day'),
+              ),
+            ),
+          ],
+        ),
+      ),
+      const Hairline(),
+    ],
+  );
+}
 
-            // Symbol + Auto-Scrolling Name
-            Expanded(
-              flex: 5, // Give text more room
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+class _HoldingRow extends StatelessWidget {
+  final _Row row;
+  final double scale;
+  final VoidCallback onTap;
+  const _HoldingRow({required this.row, required this.scale, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.text;
+    final p = context.pal;
+    final small = t.bodySmall!;
+    final figure = t.bodyMedium!.copyWith(fontWeight: FontWeight.w500);
+    return InkWell(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 9),
+            child: Row(
+              children: [
+                StockLogo(symbol: row.symbol, size: 28),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Flexible(
-                        child: Text(
-                          stock.symbol,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          softWrap: false,
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                            color: textColor,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          color: stock.dotColor,
-                          shape: BoxShape.circle,
-                        ),
+                      Text(row.symbol, style: t.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text(
+                        '${Fmt.quantity(row.quantity)} @ ${Fmt.money(row.avgPrice, currency: row.currency)}',
+                        style: small,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
-                  const SizedBox(height: 2),
-                  // 🚀 THE MAGIC SCROLLING WIDGET 🚀
-                  TextScroll(
-                    stock.name,
-                    style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                    velocity: const Velocity(pixelsPerSecond: Offset(30, 0)),
-                    delayBefore: const Duration(seconds: 2),
-                    pauseBetween: const Duration(seconds: 2),
-                    mode: TextScrollMode
-                        .bouncing, // Bounces back and forth if it overflows
+                ),
+                SizedBox(
+                  width: 64,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Sparkline(values: row.spark, scalePct: scale),
                   ),
-                ],
-              ),
-            ),
-
-            const SizedBox(width: 10),
-
-            // Sparkline (Given fixed width to stop it from crushing the text)
-            SizedBox(
-              width: 60,
-              height: 40,
-              child: stock.sparkData.isEmpty
-                  ? Text('—', style: TextStyle(color: Colors.grey[500]))
-                  : LineChart(
-                      LineChartData(
-                        minX: 0,
-                        maxX: (stock.sparkData.length - 1).toDouble(),
-                        minY: minPrice - padding,
-                        maxY: maxPrice + padding,
-                        gridData: FlGridData(show: false),
-                        borderData: FlBorderData(show: false),
-                        titlesData: FlTitlesData(show: false),
-                        lineTouchData: LineTouchData(enabled: false),
-                        lineBarsData: [
-                          LineChartBarData(
-                            spots: stock.sparkData
-                                .asMap()
-                                .entries
-                                .map((e) => FlSpot(e.key.toDouble(), e.value))
-                                .toList(),
-                            isCurved: true,
-                            color: stock.sparkColor,
-                            barWidth: 2,
-                            isStrokeCapRound: true,
-                            dotData: FlDotData(show: false),
-                            belowBarData: BarAreaData(show: false),
-                          ),
-                        ],
+                ),
+                SizedBox(
+                  width: 92,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        Fmt.money(row.price, currency: row.currency),
+                        style: figure.copyWith(color: row.stale ? p.inkFaint : null),
+                        maxLines: 1,
                       ),
-                    ),
-            ),
-
-            const SizedBox(width: 10),
-
-            // Price + Change
-            Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    stock.price,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    softWrap: false,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: textColor,
-                    ),
+                      Text(Fmt.compactMoney(row.value, currency: row.currency), style: small, maxLines: 1),
+                    ],
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    stock.change,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    softWrap: false,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: stock.isPositive ? Colors.green : Colors.red,
-                    ),
+                ),
+                SizedBox(
+                  width: 72,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      row.stale
+                          ? const StaleTag()
+                          : ChangeText(pct: row.dayPct, arrow: false, style: figure),
+                      ChangeText(pct: row.gainPct, arrow: false, style: small),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+          const Hairline(),
+        ],
       ),
     );
   }
 }
 
-// ─────────────────────────────────────────────
-// Reusable Stock Picker Modal
-// ─────────────────────────────────────────────
-class _StockPickerModal extends StatefulWidget {
-  final bool isDark;
-  final List<NigerianStock> stocksList;
-  final List<String> alreadySelected;
-  final ValueChanged<NigerianStock> onSelected;
-
-  const _StockPickerModal({
-    required this.isDark,
-    required this.stocksList,
-    required this.alreadySelected,
-    required this.onSelected,
-  });
-
-  @override
-  State<_StockPickerModal> createState() => _StockPickerModalState();
-}
-
-class _StockPickerModalState extends State<_StockPickerModal> {
-  final TextEditingController _controller = TextEditingController();
-  late List<NigerianStock> _filtered;
-
-  @override
-  void initState() {
-    super.initState();
-    _filtered = widget.stocksList;
-  }
-
-  void _onSearch(String query) {
-    setState(() {
-      _filtered = widget.stocksList
-          .where(
-            (s) =>
-                s.symbol.toLowerCase().contains(query.toLowerCase()) ||
-                s.name.toLowerCase().contains(query.toLowerCase()),
-          )
-          .toList();
-    });
-  }
+class _WatchRow extends StatelessWidget {
+  final _Row row;
+  final String name;
+  final double scale;
+  final VoidCallback onAsk;
+  const _WatchRow({required this.row, required this.name, required this.scale, required this.onAsk});
 
   @override
   Widget build(BuildContext context) {
-    final cardColor = widget.isDark ? const Color(0xFF2A2D3E) : Colors.white;
-    final bgColor = widget.isDark
-        ? const Color(0xFF1A1A2E)
-        : const Color(0xFFF2F4F7);
-    final textColor = widget.isDark ? Colors.white : const Color(0xFF1A1A2E);
-
-    return DraggableScrollableSheet(
-      initialChildSize: 0.85,
-      builder: (_, scrollController) => Container(
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          children: [
-            Container(
-              margin: const EdgeInsets.only(top: 12, bottom: 8),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey[400],
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              child: Row(
-                children: [
-                  Text(
-                    'Select Stock',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: textColor,
-                    ),
-                  ),
-                  const Spacer(),
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Icon(Icons.close, color: Colors.grey[500]),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: cardColor,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: TextField(
-                  controller: _controller,
-                  onChanged: _onSearch,
-                  autofocus: true,
-                  style: TextStyle(color: textColor),
-                  decoration: InputDecoration(
-                    hintText: 'Search...',
-                    prefixIcon: const Icon(
-                      Icons.search,
-                      color: Color(0xFF0A3D62),
-                    ),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 14),
+    final t = context.text;
+    final p = context.pal;
+    final figure = t.bodyMedium!.copyWith(fontWeight: FontWeight.w500);
+    return InkWell(
+      onTap: onAsk,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 9),
+            child: Row(
+              children: [
+                StockLogo(symbol: row.symbol, size: 28),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(row.symbol, style: t.titleSmall),
+                      Text(name, style: t.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ],
                   ),
                 ),
-              ),
-            ),
-            Expanded(
-              child: ListView.separated(
-                controller: scrollController,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 8,
+                SizedBox(
+                  width: 64,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Sparkline(values: row.spark, scalePct: scale),
+                  ),
                 ),
-                itemCount: _filtered.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemBuilder: (context, i) {
-                  final stock = _filtered[i];
-                  final alreadyAdded = widget.alreadySelected.contains(
-                    stock.symbol,
-                  );
-                  return GestureDetector(
-                    onTap: alreadyAdded ? null : () => widget.onSelected(stock),
-                    child: Opacity(
-                      opacity: alreadyAdded ? 0.4 : 1.0,
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: cardColor,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          children: [
-                            StockLogo(symbol: stock.symbol),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    stock.symbol,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: textColor,
-                                    ),
-                                  ),
-                                  Text(
-                                    stock.name,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey[500],
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (alreadyAdded)
-                              const Icon(
-                                Icons.check_circle,
-                                color: Color(0xFF0A3D62),
-                                size: 18,
-                              )
-                            else
-                              Text(
-                                '₦${stock.price.toStringAsFixed(2)}',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: textColor,
-                                ),
-                              ),
-                          ],
-                        ),
+                SizedBox(
+                  width: 92,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        Fmt.money(row.price, currency: row.currency),
+                        style: figure.copyWith(color: row.stale ? p.inkFaint : null),
                       ),
-                    ),
-                  );
-                },
-              ),
+                      if (row.stale) Text(Fmt.date(row.asOf), style: t.bodySmall),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  width: 72,
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: row.stale
+                        ? const StaleTag()
+                        : ChangeText(pct: row.dayPct, arrow: false, style: figure),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Hairline(),
+        ],
+      ),
+    );
+  }
+}
+
+/// The label/value breakdown for one holding.
+class _BreakdownSheet extends StatelessWidget {
+  final _Row row;
+  final String name;
+  const _BreakdownSheet({required this.row, required this.name});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.text;
+    final p = context.pal;
+    return SheetFrame(
+      title: row.symbol,
+      subtitle: Text(name, style: t.bodySmall),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: Gap.lg),
+            Kicker(row.stale ? 'Value at last close · stale' : 'Value at last close',
+                color: row.stale ? p.warn : null),
+            const SizedBox(height: 6),
+            Text(
+              row.value == null ? 'Not available' : Fmt.money(row.value, currency: row.currency),
+              style: AppType.figure(size: 32, color: p.ink),
+            ),
+            const SizedBox(height: 6),
+            if (row.gain != null)
+              Row(
+                children: [
+                  ChangeText(pct: row.gainPct, amount: row.gain, currency: row.currency, style: t.titleMedium),
+                  const SizedBox(width: 6),
+                  Text('since purchase', style: t.bodySmall),
+                ],
+              )
+            else
+              Text('Profit and loss need a verified close.', style: t.bodySmall),
+            const SizedBox(height: Gap.lg),
+            const Hairline(),
+            LabelValueRow('Quantity', value: '${Fmt.quantity(row.quantity)} shares'),
+            LabelValueRow('Average buy price', value: Fmt.money(row.avgPrice, currency: row.currency)),
+            LabelValueRow('Cost', value: Fmt.money(row.cost, currency: row.currency)),
+            LabelValueRow('Last close', value: Fmt.money(row.price, currency: row.currency), strong: true),
+            LabelValueRow(
+              'Day change',
+              valueWidget: row.stale
+                  ? const StaleTag()
+                  : ChangeText(pct: row.dayPct, amount: row.dayAmount, currency: row.currency),
+            ),
+            LabelValueRow(
+              'Value',
+              value: Fmt.money(row.value, currency: row.currency),
+              showRule: false,
+            ),
+            const SizedBox(height: Gap.sm),
+            FreshnessLine(asOf: row.asOf, source: row.source, stale: row.stale),
+            const SizedBox(height: Gap.xl),
+            QuietButton(
+              'Ask about ${row.symbol}',
+              onPressed: () {
+                Navigator.pop(context);
+                showAskSheet(
+                  context,
+                  about: AskContext(
+                    ticker: row.symbol,
+                    price: row.price,
+                    currency: row.currency,
+                    asOf: row.asOf,
+                    stale: row.stale,
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -2027,77 +885,52 @@ class _StockPickerModalState extends State<_StockPickerModal> {
   }
 }
 
-// ─────────────────────────────────────────────
-// Data model
-// ─────────────────────────────────────────────
-// class _StockItem {
-//   final String symbol;
-//   final String name;
-//   final String price;
-//   final String change;
-//   final bool isPositive;
-//   final Color dotColor;
-//   final Color iconBg;
-//   final String iconLabel;
-//   final Widget? iconWidget;
-//   final List<double> sparkData;
-//   final Color sparkColor;
+class _TableSkeleton extends StatelessWidget {
+  final bool summary;
+  const _TableSkeleton({this.summary = false});
 
-//   const _StockItem({
-//     required this.symbol,
-//     required this.name,
-//     required this.price,
-//     required this.change,
-//     required this.isPositive,
-//     required this.dotColor,
-//     required this.iconBg,
-//     required this.iconLabel,
-//     required this.iconWidget,
-//     required this.sparkData,
-//     required this.sparkColor,
-//   });
-// }
-// ─────────────────────────────────────────────
-// Data model
-// ─────────────────────────────────────────────
-class _StockItem {
-  final String symbol;
-  final String name;
-  final String price;
-  final String change;
-  final bool isPositive;
-  final Color dotColor;
-  final Color iconBg;
-  final String iconLabel;
-  final Widget? iconWidget;
-  final List<double> sparkData;
-  final Color sparkColor;
-
-  // 🚨 NEW: Added these so we can do math in the bottom sheet!
-  final double? quantity;
-  final double? avgBuyPrice;
-  final double? marketPrice;
-  final String currency;
-  final DateTime? asOf;
-  final bool stale;
-
-  const _StockItem({
-    required this.symbol,
-    required this.name,
-    required this.price,
-    required this.change,
-    required this.isPositive,
-    required this.dotColor,
-    required this.iconBg,
-    required this.iconLabel,
-    required this.iconWidget,
-    required this.sparkData,
-    required this.sparkColor,
-    this.quantity,
-    this.avgBuyPrice,
-    this.marketPrice,
-    this.currency = 'NGN',
-    this.asOf,
-    this.stale = false,
-  });
+  @override
+  Widget build(BuildContext context) {
+    return Skeleton(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (summary) ...[
+            const SizedBox(height: Gap.lg),
+            const SkeletonBox(width: 80, height: 10),
+            const SizedBox(height: 10),
+            const SkeletonBox(width: 220, height: 32),
+            const SizedBox(height: 14),
+            const Row(
+              children: [
+                Expanded(child: SkeletonBox(height: 30)),
+                SizedBox(width: Gap.md),
+                Expanded(child: SkeletonBox(height: 30)),
+              ],
+            ),
+            const SizedBox(height: Gap.xl),
+            const HeavyRule(),
+            const SizedBox(height: Gap.md),
+          ],
+          for (var i = 0; i < 4; i++) ...[
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 10),
+              child: Row(
+                children: [
+                  SkeletonBox(width: 28, height: 28, radius: Radii.sm),
+                  SizedBox(width: 10),
+                  Expanded(child: SkeletonBox(height: 26)),
+                  SizedBox(width: 12),
+                  SkeletonBox(width: 56, height: 22),
+                  SizedBox(width: 12),
+                  SkeletonBox(width: 70, height: 26),
+                ],
+              ),
+            ),
+            const Hairline(),
+          ],
+        ],
+      ),
+    );
+  }
 }

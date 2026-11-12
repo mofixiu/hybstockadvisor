@@ -1,16 +1,15 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import 'package:hybstockadvisor/services/api_service.dart';
 
+/// Name, avatar and plain holding counts for the Profile tab.
 class ProfileProvider extends ChangeNotifier {
   static const Duration ttl = Duration(minutes: 15);
 
-  String _fullName = 'Loading...';
+  String _fullName = '';
   String? _avatarPath;
-  String _investorTier = 'Beginner Investor';
-  IconData _tierIcon = Icons.person_outline;
-  Color _tierColor = const Color(0xFF888888);
-  Color _tierBgColor = const Color(0xFFE8E8E8);
+  int? _holdingsCount;
+  int? _watchlistCount;
 
   bool _isLoading = false;
   bool _hasError = false;
@@ -19,12 +18,21 @@ class ProfileProvider extends ChangeNotifier {
 
   String get fullName => _fullName;
   String? get avatarPath => _avatarPath;
-  String get investorTier => _investorTier;
-  IconData get tierIcon => _tierIcon;
-  Color get tierColor => _tierColor;
-  Color get tierBgColor => _tierBgColor;
+
+  /// Null when the counts could not be loaded.
+  int? get holdingsCount => _holdingsCount;
+  int? get watchlistCount => _watchlistCount;
   bool get isLoading => _isLoading;
   bool get hasError => _hasError;
+
+  /// "8 holdings · 3 on watchlist", or null when unknown.
+  String? get countsLine {
+    final h = _holdingsCount;
+    final w = _watchlistCount;
+    if (h == null || w == null) return null;
+    final holdings = h == 1 ? '1 holding' : '$h holdings';
+    return '$holdings · $w on watchlist';
+  }
 
   Future<void> load({bool force = false}) async {
     final active = _inFlight;
@@ -41,7 +49,6 @@ class ProfileProvider extends ChangeNotifier {
 
     final future = _loadInternal();
     _inFlight = future;
-
     try {
       await future;
     } finally {
@@ -54,43 +61,17 @@ class ProfileProvider extends ChangeNotifier {
       final box = await Hive.openBox('user');
       final firstName = box.get('first_name', defaultValue: '');
       final lastName = box.get('last_name', defaultValue: '');
-      final name = '$firstName $lastName'.trim();
-      final avatarPath = box.get('avatar_path') as String?;
-
-      String tier = 'Beginner Investor';
-      IconData icon = Icons.person_outline;
-      Color color = const Color(0xFF888888);
-      Color bgColor = const Color(0xFFE8E8E8);
+      _fullName = '$firstName $lastName'.trim();
+      _avatarPath = box.get('avatar_path') as String?;
 
       final data = await ApiService.getUserAssets();
       if (data != null) {
-        final portfolioCount = (data['portfolio'] as List?)?.length ?? 0;
-        if (portfolioCount >= 5) {
-          tier = 'Premium Investor';
-          icon = Icons.verified;
-          color = const Color(0xFF0A3D62);
-          bgColor = const Color(0xFFEAF1FF);
-        } else if (portfolioCount >= 3) {
-          tier = 'Committed Investor';
-          icon = Icons.trending_up;
-          color = const Color(0xFF2DBD6E);
-          bgColor = const Color(0xFFD6F5E3);
-        } else if (portfolioCount >= 1) {
-          tier = 'Active Investor';
-          icon = Icons.show_chart;
-          color = const Color(0xFF2979FF);
-          bgColor = const Color(0xFFDCEAFF);
-        }
+        _holdingsCount = (data['portfolio'] as List?)?.length ?? 0;
+        _watchlistCount = (data['watchlist'] as List?)?.length ?? 0;
+      } else {
+        _holdingsCount = null;
+        _watchlistCount = null;
       }
-
-      if (name.isNotEmpty) {
-        _fullName = name;
-      }
-      _avatarPath = avatarPath;
-      _investorTier = tier;
-      _tierIcon = icon;
-      _tierColor = color;
-      _tierBgColor = bgColor;
       _lastFetchedAt = DateTime.now();
       _hasError = false;
     } catch (_) {
@@ -107,12 +88,10 @@ class ProfileProvider extends ChangeNotifier {
   }
 
   void resetForSessionChange() {
-    _fullName = 'Loading...';
+    _fullName = '';
     _avatarPath = null;
-    _investorTier = 'Beginner Investor';
-    _tierIcon = Icons.person_outline;
-    _tierColor = const Color(0xFF888888);
-    _tierBgColor = const Color(0xFFE8E8E8);
+    _holdingsCount = null;
+    _watchlistCount = null;
     _isLoading = false;
     _hasError = false;
     _lastFetchedAt = null;

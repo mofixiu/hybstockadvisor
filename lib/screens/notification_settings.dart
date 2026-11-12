@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
+import 'package:hybstockadvisor/theme/tokens.dart';
+import 'package:hybstockadvisor/widgets/ui.dart';
 
+/// Which in-app alerts to create. Stored in the Hive `user` box.
 class NotificationSettings extends StatefulWidget {
   const NotificationSettings({super.key});
 
@@ -9,12 +12,8 @@ class NotificationSettings extends StatefulWidget {
 }
 
 class _NotificationSettingsState extends State<NotificationSettings> {
-  // Alert toggles
   bool _priceMovement = true;
-  bool _aiForecast = true;
-  bool _safetyIndex = true;
-  // General toggles
-  bool _appUpdates = false;
+  bool _researchSignals = true;
   bool _weeklySummary = true;
 
   @override
@@ -25,290 +24,151 @@ class _NotificationSettingsState extends State<NotificationSettings> {
 
   Future<void> _loadPrefs() async {
     final box = await Hive.openBox('user');
+    if (!mounted) return;
     setState(() {
-      _priceMovement = box.get('notif_price_movement', defaultValue: true);
-      _aiForecast = box.get('notif_ai_forecast', defaultValue: true);
-      _safetyIndex = box.get('notif_safety_index', defaultValue: true);
-      _appUpdates = box.get('notif_app_updates', defaultValue: false);
-      _weeklySummary = box.get('notif_weekly_summary', defaultValue: true);
+      _priceMovement = box.get('notif_price_movement', defaultValue: true) == true;
+      _researchSignals = box.get('notif_ai_forecast', defaultValue: true) == true;
+      _weeklySummary = box.get('notif_weekly_summary', defaultValue: true) == true;
     });
   }
 
-  Future<void> _savePref(String key, bool value) async {
+  Future<void> _save(Map<String, bool> values) async {
     final box = await Hive.openBox('user');
-    await box.put(key, value);
+    for (final e in values.entries) {
+      await box.put(e.key, e.value);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF1A1A2E) : const Color(0xFFF2F4F7);
-    final cardColor = isDark ? const Color(0xFF2A2D3E) : Colors.white;
-    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
-    final dividerColor = isDark
-        ? Colors.white.withOpacity(0.06)
-        : Colors.grey.withOpacity(0.15);
-
+    final p = context.pal;
     return Scaffold(
-      backgroundColor: bgColor,
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: bgColor,
-        centerTitle: true,
-        leading: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Container(
-            margin: const EdgeInsets.only(left: 16),
-            decoration: BoxDecoration(
-              color: cardColor,
-              borderRadius: BorderRadius.circular(10),
-              boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4),
-              ],
-            ),
-            child: Icon(Icons.arrow_back_ios_new, size: 16, color: textColor),
-          ),
-        ),
-        title: Text(
-          'Notifications',
-          style: TextStyle(
-            color: textColor,
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
+      backgroundColor: p.paper,
+      appBar: AppBar(title: const Text('Notifications')),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 20),
-
-              // ── ALERTS ──
-              _SectionLabel(label: 'ALERTS', isDark: isDark),
-              const SizedBox(height: 12),
-              _buildCard(
-                cardColor: cardColor,
-                dividerColor: dividerColor,
-                children: [
-                  _NotifRow(
-                    icon: Icons.show_chart,
-                    iconBg: const Color(0xFFDCEAFF),
-                    iconColor: const Color(0xFF2979FF),
-                    label: 'Price Movement Alerts',
-                    subtitle: 'Get notified on significant stock movements',
-                    textColor: textColor,
-                    value: _priceMovement,
-                    onChanged: (val) {
-                      setState(() => _priceMovement = val);
-                      _savePref('notif_price_movement', val);
-                    },
-                  ),
-                  _NotifRow(
-                    icon: Icons.auto_awesome,
-                    iconBg: const Color(0xFFEDE7FF),
-                    iconColor: const Color(0xFF7C3AED),
-                    label: 'AI Forecast Ready',
-                    subtitle: 'When a new AI forecast is available',
-                    textColor: textColor,
-                    value: _aiForecast,
-                    onChanged: (val) {
-                      setState(() => _aiForecast = val);
-                      _savePref('notif_ai_forecast', val);
-                    },
-                  ),
-                  _NotifRow(
-                    icon: Icons.security,
-                    iconBg: const Color(0xFFD6F5E3),
-                    iconColor: const Color(0xFF2DBD6E),
-                    label: 'Safety Index Change',
-                    subtitle: 'Alert when safety index changes significantly',
-                    textColor: textColor,
-                    value: _safetyIndex,
-                    onChanged: (val) {
-                      setState(() => _safetyIndex = val);
-                      _savePref('notif_safety_index', val);
-                    },
-                    isLast: true,
-                  ),
-                ],
+        child: ListView(
+          padding: const EdgeInsets.only(bottom: Gap.xxl),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(Gap.page, Gap.sm, Gap.page, 0),
+              child: Text(
+                'Alerts are created in the app when it loads new closing data. '
+                'Stale data never triggers an alert.',
+                style: context.text.bodySmall,
               ),
-
-              const SizedBox(height: 24),
-
-              // ── GENERAL ──
-              _SectionLabel(label: 'GENERAL', isDark: isDark),
-              const SizedBox(height: 12),
-              _buildCard(
-                cardColor: cardColor,
-                dividerColor: dividerColor,
-                children: [
-                  _NotifRow(
-                    icon: Icons.system_update_outlined,
-                    iconBg: const Color(0xFFFFF3E0),
-                    iconColor: const Color(0xFFF59E0B),
-                    label: 'App Updates',
-                    subtitle: 'News about new features and updates',
-                    textColor: textColor,
-                    value: _appUpdates,
-                    onChanged: (val) {
-                      setState(() => _appUpdates = val);
-                      _savePref('notif_app_updates', val);
-                    },
-                  ),
-                  _NotifRow(
-                    icon: Icons.calendar_today_outlined,
-                    iconBg: const Color(0xFFFFE4EC),
-                    iconColor: const Color(0xFFE91E63),
-                    label: 'Weekly Summary',
-                    subtitle: 'Receive a weekly portfolio performance summary',
-                    textColor: textColor,
-                    value: _weeklySummary,
-                    onChanged: (val) {
-                      setState(() => _weeklySummary = val);
-                      _savePref('notif_weekly_summary', val);
-                    },
-                    isLast: true,
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 32),
-            ],
-          ),
+            ),
+            const _Group('Holdings'),
+            _ToggleRow(
+              icon: Icons.show_chart,
+              label: 'Price moves',
+              subtitle: 'When a holding closes 3% or more up or down on the day',
+              value: _priceMovement,
+              onChanged: (v) {
+                setState(() => _priceMovement = v);
+                _save({'notif_price_movement': v});
+              },
+            ),
+            _ToggleRow(
+              icon: Icons.article_outlined,
+              label: 'Research signals',
+              subtitle: 'When a reviewed research signal is published for a holding',
+              value: _researchSignals,
+              // The dashboard reads both keys for signal alerts; keep them in step.
+              onChanged: (v) {
+                setState(() => _researchSignals = v);
+                _save({'notif_ai_forecast': v});
+              },
+              last: true,
+            ),
+            const _Group('Summaries'),
+            _ToggleRow(
+              icon: Icons.calendar_today_outlined,
+              label: 'Weekly summary',
+              subtitle: 'A Friday recap of how your holdings moved',
+              value: _weeklySummary,
+              onChanged: (v) {
+                setState(() => _weeklySummary = v);
+                _save({'notif_weekly_summary': v});
+              },
+              last: true,
+            ),
+          ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildCard({
-    required Color cardColor,
-    required Color dividerColor,
-    required List<_NotifRow> children,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        children: children.asMap().entries.map((e) {
-          final isLast = e.key == children.length - 1;
-          return Column(
-            children: [
-              e.value,
-              if (!isLast) Divider(height: 1, indent: 70, color: dividerColor),
-            ],
-          );
-        }).toList(),
       ),
     );
   }
 }
 
-// ─────────────────────────────────────────────
-// Notification Toggle Row
-// ─────────────────────────────────────────────
-class _NotifRow extends StatelessWidget {
+class _Group extends StatelessWidget {
+  final String label;
+  const _Group(this.label);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(Gap.page, Gap.xl, Gap.page, 0),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Kicker(label),
+        const SizedBox(height: Gap.sm),
+        const Hairline(),
+      ],
+    ),
+  );
+}
+
+class _ToggleRow extends StatelessWidget {
   final IconData icon;
-  final Color iconBg;
-  final Color iconColor;
   final String label;
   final String subtitle;
-  final Color textColor;
   final bool value;
   final ValueChanged<bool> onChanged;
-  final bool isLast;
+  final bool last;
 
-  const _NotifRow({
+  const _ToggleRow({
     required this.icon,
-    required this.iconBg,
-    required this.iconColor,
     required this.label,
     required this.subtitle,
-    required this.textColor,
     required this.value,
     required this.onChanged,
-    this.isLast = false,
+    this.last = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: iconBg,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: iconColor, size: 20),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: textColor,
+    final p = context.pal;
+    final t = context.text;
+    return MergeSemantics(
+      child: InkWell(
+        onTap: () => onChanged(!value),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: Gap.page, vertical: 10),
+              child: Row(
+                children: [
+                  Icon(icon, size: 20, color: p.ink),
+                  const SizedBox(width: Gap.lg),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(label, style: t.bodyLarge),
+                        const SizedBox(height: 2),
+                        Text(subtitle, style: t.bodySmall),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-                ),
-              ],
+                  const SizedBox(width: Gap.sm),
+                  Switch(value: value, onChanged: onChanged),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Switch(
-            value: value,
-            onChanged: onChanged,
-            activeColor: const Color(0xFF0A3D62),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────
-// Section Label
-// ─────────────────────────────────────────────
-class _SectionLabel extends StatelessWidget {
-  final String label;
-  final bool isDark;
-
-  const _SectionLabel({required this.label, required this.isDark});
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 11,
-          letterSpacing: 1.3,
-          fontWeight: FontWeight.w600,
-          color: Colors.grey[500],
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: Gap.page),
+              child: last ? const Hairline() : const Hairline(indent: 36),
+            ),
+          ],
         ),
       ),
     );

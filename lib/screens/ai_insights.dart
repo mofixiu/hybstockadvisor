@@ -1,14 +1,23 @@
-// ignore_for_file: deprecated_member_use
-
 import 'package:flutter/material.dart';
-import 'package:fl_chart/fl_chart.dart';
-import 'package:provider/provider.dart';
+import 'package:hybstockadvisor/models/market_stock.dart';
+import 'package:hybstockadvisor/models/research_signal.dart';
 import 'package:hybstockadvisor/providers/market_data_provider.dart';
-import 'package:hybstockadvisor/widgets/ai_chat_sheet.dart';
-import 'package:hybstockadvisor/widgets/bottomNavBar.dart';
 import 'package:hybstockadvisor/services/api_service.dart';
+import 'package:hybstockadvisor/theme/format.dart';
+import 'package:hybstockadvisor/theme/tokens.dart';
+import 'package:hybstockadvisor/widgets/ask_sheet.dart';
+import 'package:hybstockadvisor/widgets/bottomNavBar.dart';
+import 'package:hybstockadvisor/widgets/stock_logo.dart';
+import 'package:hybstockadvisor/widgets/stock_picker_sheet.dart';
+import 'package:hybstockadvisor/widgets/ui.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+/// Research: an analyst's note for the selected stock, built only from what
+/// `/api/insights/{ticker}` returns. Direction, probability against the base
+/// rate, horizon, data date and source, numbered evidence, and the model's
+/// track record against a baseline. Nothing is shown for data the backend
+/// does not send.
 class AiInsights extends StatefulWidget {
   const AiInsights({super.key});
 
@@ -16,959 +25,552 @@ class AiInsights extends StatefulWidget {
   State<AiInsights> createState() => _AiInsightsState();
 }
 
-class _AiInsightsState extends State<AiInsights>
-    with SingleTickerProviderStateMixin {
-  bool _isLoading = true;
-  bool _hasError = false;
+class _AiInsightsState extends State<AiInsights> {
+  String _ticker = ApiService.currentTicker;
+  bool _loading = true;
+  String? _error;
+  Map<String, dynamic> _data = {};
+  ResearchSignal _signal = ResearchSignal.unavailable;
+  List<MarketStock> _market = [];
 
-  // Default fallback states
-  String _ticker = "";
-  String _recommendation = "LOADING...";
-  String _explanation = "Analyzing market data...";
-
-  double? _aiConfidence;
-  double? _safetyIndex;
-
-  AnimationController? _shimmerController;
+  MarketStock? get _stock {
+    for (final s in _market) {
+      if (s.symbol == _ticker) return s;
+    }
+    return null;
+  }
 
   @override
   void initState() {
     super.initState();
-    _shimmerController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat();
-    // Grab whatever stock was selected on the Dashboard!
-    _ticker = ApiService.currentTicker;
-    _fetchInsights();
+    _load();
+    _loadMarket();
   }
 
-  @override
-  void dispose() {
-    _shimmerController?.dispose();
-    super.dispose();
-  }
-
-  Future<void> _launchBamboo() async {
-    final Uri url = Uri.parse('https://app.investbamboo.com/');
-    try {
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url, mode: LaunchMode.inAppWebView);
-      } else {
-        throw 'Could not launch $url';
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Could not open brokerage platform.")),
-        );
-      }
-    }
-  }
-
-  Future<void> _fetchInsights() async {
-    if (mounted) {
-      setState(() {
-        _isLoading = true;
-        _hasError = false;
-      });
-    }
-    final response = await context.read<MarketDataProvider>().getInsights(
-      _ticker,
-    );
-
+  Future<void> _loadMarket() async {
+    final res = await context.read<MarketDataProvider>().getMarketSummary();
     if (!mounted) return;
+    setState(() => _market = MarketStock.listFromSummary(res));
+  }
 
-    if (response != null && response['status'] == 'success') {
-      final data = response['data'] is Map
-          ? Map<String, dynamic>.from(response['data'] as Map)
-          : <String, dynamic>{};
-      final signal = data['signal'] is Map
-          ? Map<String, dynamic>.from(data['signal'] as Map)
-          : <String, dynamic>{};
-      final available =
-          signal['available'] == true && data['data_stale'] != true;
-      final validation = signal['validation'] is Map
-          ? Map<String, dynamic>.from(signal['validation'] as Map)
-          : <String, dynamic>{};
-      final validationDetails = <String>[];
-      if (validation.isNotEmpty) {
-        validationDetails.add(
-          'Reviewed model ${validation['model_version'] ?? 'version unavailable'}; '
-          '${validation['paper_samples'] ?? 0} paper predictions.',
-        );
-        if (validation['backtest_brier_score'] is num &&
-            validation['backtest_prior_baseline_brier_score'] is num) {
-          validationDetails.add(
-            '10-session walk-forward Brier ${validation['backtest_brier_score']} '
-            'vs prior baseline ${validation['backtest_prior_baseline_brier_score']}.',
-          );
-        }
-      }
-      final price = data['price'];
-      final currency = data['currency']?.toString() ?? 'NGN';
-      final dataDate = data['data_as_of']?.toString() ?? 'date unavailable';
-      final stale = data['data_stale'] == true;
-      final contextLines = <String>[
-        if (price is num) '$currency daily close: ${price.toStringAsFixed(2)}.',
-        'Data date: $dataDate${stale ? ' (stale)' : ''}.',
-        if (data['data_source'] != null) 'Source: ${data['data_source']}.',
-        if (available)
-          'Research horizon: ${signal['horizon'] is Map ? (signal['horizon'] as Map)['primary'] ?? 10 : 10} trading days.',
-        ...validationDetails,
-      ];
+  Future<void> _load({bool force = false}) async {
+    final ticker = _ticker;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    final res = await context.read<MarketDataProvider>().getInsights(ticker, force: force);
+    if (!mounted || ticker != _ticker) return;
+    if (res == null || res['status'] != 'success' || res['data'] is! Map) {
       setState(() {
-        _recommendation = available
-            ? '${signal['direction'] ?? 'Directional'} research signal'
-            : stale
-            ? 'STALE DATA · NO SIGNAL'
-            : 'RESEARCH CONTEXT ONLY';
-        _explanation = [
-          data['explanation']?.toString() ?? 'Market context is unavailable.',
-          ...contextLines,
-          if (signal['evidence'] is List)
-            ...((signal['evidence'] as List).map((item) => 'Evidence: $item')),
-        ].join('\n');
-        final probability = signal['probability_positive'];
-        _aiConfidence = available && probability is num
-            ? probability.toDouble() * 100
-            : null;
-        _safetyIndex = null;
-        _isLoading = false;
+        _loading = false;
+        _error = "Couldn't load the note for $ticker. Check your connection and try again.";
       });
-    } else {
-      setState(() {
-        _isLoading = false;
-        _hasError = true;
-      });
+      return;
+    }
+    final data = Map<String, dynamic>.from(res['data'] as Map);
+    setState(() {
+      _data = data;
+      _signal = ResearchSignal.fromJson(data['signal'], dataStale: data['data_stale'] == true);
+      _loading = false;
+    });
+  }
+
+  Future<void> _pickStock() async {
+    if (_market.isEmpty) return;
+    final picked = await showStockPicker(context, stocks: _market, selected: _ticker);
+    if (picked == null || !mounted) return;
+    ApiService.currentTicker = picked.symbol;
+    setState(() => _ticker = picked.symbol);
+    _load();
+  }
+
+  Future<void> _openBroker() async {
+    final url = Uri.parse('https://app.investbamboo.com/');
+    try {
+      final ok = await launchUrl(url, mode: LaunchMode.inAppBrowserView);
+      if (!ok && mounted) showNotice(context, "Couldn't open Bamboo.");
+    } catch (_) {
+      if (mounted) showNotice(context, "Couldn't open Bamboo.");
     }
   }
 
-  Widget _buildNetworkError(Color textColor, VoidCallback onRetry) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.wifi_off_rounded, size: 56, color: Colors.grey[400]),
-            const SizedBox(height: 16),
-            Text(
-              'Could not connect to server',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: textColor,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Check your connection and try again.',
-              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: onRetry,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0A3D62),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 32,
-                  vertical: 12,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: const Text(
-                'Retry',
-                style: TextStyle(color: Colors.white, fontSize: 15),
-              ),
-            ),
-          ],
-        ),
+  void _ask() {
+    final price = _data['price'];
+    showAskSheet(
+      context,
+      about: AskContext(
+        ticker: _ticker,
+        price: price is num ? price.toDouble() : null,
+        currency: _data['currency']?.toString() ?? 'NGN',
+        asOf: _data['data_as_of'],
+        stale: _data['data_stale'] == true,
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    // 👇 ADD THIS "WAKE UP" CHECK 👇
-    // If the global ticker changed while we were on the Dashboard, fetch the new data!
-    if (_ticker != ApiService.currentTicker && !_isLoading) {
-      _ticker = ApiService.currentTicker;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _fetchInsights();
-      });
-    }
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF1A1A2E) : const Color(0xFFF2F4F7);
-    final cardColor = isDark ? const Color(0xFF2A2D3E) : Colors.white;
-    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
-
     return Scaffold(
-      extendBody: true,
-      backgroundColor: bgColor,
-      floatingActionButton: SizedBox(
-        width: 42,
-        height: 42,
-        child: FloatingActionButton(
-          elevation: 4,
-          highlightElevation: 6,
-          backgroundColor: const Color(0xFF0A3D62),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          onPressed: () {
-            showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              backgroundColor: Colors.transparent,
-              builder: (context) =>
-                  AiChatSheet(isDark: isDark, currentTicker: _ticker),
-            );
-          },
-          child: const Icon(
-            Icons.smart_toy_outlined,
-            color: Colors.white,
-            size: 22,
-          ),
-        ),
-      ),
-
       bottomNavigationBar: const BottomNavBar(currentIndex: 1),
-      appBar: AppBar(
-        backgroundColor: bgColor,
-        elevation: 0,
-        automaticallyImplyLeading: false,
-        title: Text(
-          'Why This Recommendation?',
-          style: TextStyle(
-            color: textColor,
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        centerTitle: true,
-      ),
       body: SafeArea(
         bottom: false,
-        child: _isLoading && _shimmerController != null
-            ? _AiInsightsShimmer(
-                controller: _shimmerController!,
-                isDark: isDark,
-              )
-            : _hasError
-            ? _buildNetworkError(textColor, _fetchInsights)
-            : Column(
-                children: [
-                  Expanded(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.only(
-                        left: 20,
-                        right: 20,
-                        top: 8,
-                        bottom: 120,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // ── AI Analysis Header ──
-                          Row(
-                            children: [
-                              Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF5E6A3),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Icon(
-                                  Icons
-                                      .psychology, // Swapped icon for a smarter look
-                                  color: Color(0xFF7A5C00),
-                                  size: 24,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  'AI Analysis: ($_ticker) : $_recommendation',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: textColor,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          const SizedBox(height: 14),
-
-                          // ── Dynamic Explanation ──
-                          Text(
-                            _explanation,
-                            style: TextStyle(
-                              fontSize: 14,
-                              height: 1.6,
-                              color: isDark
-                                  ? Colors.grey[300]
-                                  : Colors.grey[700],
-                            ),
-                          ),
-
-                          const SizedBox(height: 24),
-
-                          // ── Metric Cards ──
-                          _MetricCard(
-                            isDark: isDark,
-                            cardColor: cardColor,
-                            icon: Icons.psychology,
-                            iconBgColor: const Color(0xFFDCEAFF),
-                            iconColor: const Color(0xFF2979FF),
-                            label: 'AI Confidence',
-                            value: _aiConfidence == null
-                                ? 'Unavailable'
-                                : '${_aiConfidence!.toStringAsFixed(1)}%',
-                            percent: (_aiConfidence ?? 0) / 100,
-                            gaugeColor: const Color(0xFF2979FF),
-                          ),
-
-                          const SizedBox(height: 12),
-
-                          _MetricCard(
-                            isDark: isDark,
-                            cardColor: cardColor,
-                            icon: Icons.bar_chart,
-                            iconBgColor: const Color(0xFFD6F5E3),
-                            iconColor: const Color(0xFF2DBD6E),
-                            label: 'Market Stability',
-                            value: 'Unavailable',
-                            percent: 0,
-                            gaugeColor: const Color(0xFF2DBD6E),
-                          ),
-
-                          const SizedBox(height: 12),
-
-                          _MetricCard(
-                            isDark: isDark,
-                            cardColor: cardColor,
-                            icon: Icons.chat_bubble,
-                            iconBgColor: const Color(0xFFFFDCDC),
-                            iconColor: const Color(0xFFE53935),
-                            label: 'Public Sentiment',
-                            value: 'Unavailable',
-                            percent: 0,
-                            gaugeColor: const Color(0xFFE53935),
-                          ),
-
-                          const SizedBox(height: 28),
-
-                          // ── Key Market Drivers ──
-                          Text(
-                            'Key Market Drivers',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: textColor,
-                            ),
-                          ),
-
-                          const SizedBox(height: 16),
-
-                          Container(
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              color: cardColor,
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.05),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: Column(
-                              children: [
-                                _ImpactBar(
-                                  isDark: isDark,
-                                  label: 'RSI Momentum',
-                                  impact: 'Unavailable',
-                                  impactColor: Colors.grey,
-                                  value: 0,
-                                  isPositive: false,
-                                ),
-                                const SizedBox(height: 24),
-                                _ImpactBar(
-                                  isDark: isDark,
-                                  label: 'EMA 50 Trend',
-                                  impact: 'Unavailable',
-                                  impactColor: Colors.grey,
-                                  value: 0,
-                                  isPositive: false,
-                                ),
-                                const SizedBox(height: 12),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      'Negative',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey[500],
-                                      ),
-                                    ),
-                                    Text(
-                                      'Neutral',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey[500],
-                                      ),
-                                    ),
-                                    Text(
-                                      'Positive',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey[500],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-
-                          const SizedBox(height: 20),
-
-                          // ── Investment Safety Index Banner ──
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(24),
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFF0A3D62), Color(0xFF0A3D62)],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: const [
-                                    Icon(
-                                      Icons.shield,
-                                      color: Colors.white70,
-                                      size: 16,
-                                    ),
-                                    SizedBox(width: 6),
-                                    Text(
-                                      'INVESTMENT SAFETY INDEX',
-                                      style: TextStyle(
-                                        color: Colors.white70,
-                                        fontSize: 11,
-                                        letterSpacing: 1.2,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                RichText(
-                                  text: TextSpan(
-                                    children: [
-                                      TextSpan(
-                                        text:
-                                            _safetyIndex?.toStringAsFixed(1) ??
-                                            'N/A',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 48,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      const TextSpan(
-                                        text: ' /100',
-                                        style: TextStyle(
-                                          color: Colors.white70,
-                                          fontSize: 22,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  _safetyIndex == null
-                                      ? 'No validated safety score is available for this data.'
-                                      : _safetyIndex! >= 60
-                                      ? 'High safety rating based on current volatility and historical resilience.'
-                                      : 'Caution advised. Asset is currently experiencing turbulence or negative sentiment.',
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 13,
-                                    height: 1.5,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-
-                          const SizedBox(height: 24),
-
-                          // ── Execute Trade Button ──
-                          SizedBox(
-                            width: double.infinity,
-                            height: 54,
-                            child: ElevatedButton.icon(
-                              onPressed: _launchBamboo,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF0A3D62),
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                elevation: 0,
-                              ),
-                              icon: const Icon(Icons.account_balance, size: 20),
-                              label: const Text(
-                                'Execute on Bamboo',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ),
-
-                          const SizedBox(height: 20),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+        child: RefreshIndicator(
+          color: context.pal.accent,
+          onRefresh: () => _load(force: true),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.only(bottom: Gap.xxl),
+            children: [
+              const PageTitle('Research'),
+              _stockRow(context),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: Gap.page),
+                child: _loading
+                    ? const _NoteSkeleton()
+                    : _error != null
+                    ? MessageBlock(
+                        title: 'Note not loaded',
+                        body: _error,
+                        actionLabel: 'Try again',
+                        onAction: () => _load(force: true),
+                      )
+                    : _note(context),
               ),
+            ],
+          ),
+        ),
       ),
     );
   }
-}
 
-// ─────────────────────────────────────────────
-// Metric Card with arc gauge
-// ─────────────────────────────────────────────
-class _MetricCard extends StatelessWidget {
-  final bool isDark;
-  final Color cardColor;
-  final IconData icon;
-  final Color iconBgColor;
-  final Color iconColor;
-  final String label;
-  final String value;
-  final double percent;
-  final Color gaugeColor;
-
-  const _MetricCard({
-    required this.isDark,
-    required this.cardColor,
-    required this.icon,
-    required this.iconBgColor,
-    required this.iconColor,
-    required this.label,
-    required this.value,
-    required this.percent,
-    required this.gaugeColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
-    // Safety check to ensure pie chart doesn't break if percentage is out of bounds
-    final safePercent = percent.clamp(0.0, 1.0);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: iconBgColor,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: iconColor, size: 22),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _stockRow(BuildContext context) {
+    final t = context.text;
+    final p = context.pal;
+    final s = _stock;
+    return Column(
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: Gap.page),
+          child: HeavyRule(),
+        ),
+        InkWell(
+          onTap: _market.isEmpty ? null : _pickStock,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(Gap.page, Gap.md, Gap.md, Gap.md),
+            child: Row(
               children: [
-                Text(
-                  label,
-                  style: TextStyle(fontSize: 13, color: Colors.grey[500]),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: textColor,
+                StockLogo(symbol: _ticker, size: 36),
+                const SizedBox(width: Gap.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(_ticker, style: t.titleMedium),
+                      Text(
+                        s?.name ?? 'NGX',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: t.bodySmall,
+                      ),
+                    ],
                   ),
                 ),
+                if (_market.isNotEmpty) ...[
+                  Text('Change', style: t.labelLarge?.copyWith(color: p.accent)),
+                  Icon(Icons.expand_more, color: p.accent, size: 20),
+                ],
               ],
             ),
           ),
-          SizedBox(
-            width: 48,
-            height: 48,
-            child: PieChart(
-              PieChartData(
-                startDegreeOffset: -210,
-                sectionsSpace: 0,
-                centerSpaceRadius: 16,
-                sections: [
-                  PieChartSectionData(
-                    value: safePercent * 100,
-                    color: gaugeColor,
-                    radius: 8,
-                    showTitle: false,
-                  ),
-                  PieChartSectionData(
-                    value: (1 - safePercent) * 100,
-                    color: isDark
-                        ? Colors.white12
-                        : Colors.grey.withOpacity(0.15),
-                    radius: 8,
-                    showTitle: false,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+        ),
+        const Hairline(indent: Gap.page, endIndent: Gap.page),
+      ],
     );
   }
-}
 
-// ─────────────────────────────────────────────
-// Impact Bar
-// ─────────────────────────────────────────────
-class _ImpactBar extends StatelessWidget {
-  final bool isDark;
-  final String label;
-  final String impact;
-  final Color impactColor;
-  final double value;
-  final bool isPositive;
+  Widget _note(BuildContext context) {
+    final t = context.text;
+    final p = context.pal;
+    final sig = _signal;
+    final stale = _data['data_stale'] == true;
+    final hasData = _data['price'] is num;
+    final currency = _data['currency']?.toString() ?? 'NGN';
 
-  const _ImpactBar({
-    required this.isDark,
-    required this.label,
-    required this.impact,
-    required this.impactColor,
-    required this.value,
-    required this.isPositive,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final trackColor = isDark
-        ? Colors.white.withOpacity(0.08)
-        : Colors.grey.withOpacity(0.15);
-    final safeValue = value.clamp(0.0, 1.0);
+    final headline = sig.available && sig.direction != null
+        ? '${sig.isPositive ? 'Positive' : 'Negative'} research signal for $_ticker over the next ${sig.horizon} trading days'
+        : !hasData
+        ? 'No verified data for $_ticker yet'
+        : stale
+        ? 'No signal for $_ticker: the data is stale'
+        : 'No reviewed signal for $_ticker';
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white : const Color(0xFF1A1A2E),
-              ),
-            ),
-            Text(
-              impact,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                color: impactColor,
-              ),
-            ),
-          ],
+        const SizedBox(height: Gap.lg),
+        Kicker(
+          'Research note · NGX${_data['data_as_of'] != null ? ' · ${Fmt.date(_data['data_as_of'])}' : ''}',
+          color: p.accent,
         ),
-        const SizedBox(height: 10),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final totalWidth = constraints.maxWidth;
-            final halfWidth = totalWidth / 2;
-            final barWidth = halfWidth * safeValue;
+        const SizedBox(height: Gap.sm),
+        Text(headline, style: t.headlineSmall),
+        const SizedBox(height: Gap.md),
+        Text(
+          _data['explanation']?.toString() ?? 'No explanation was returned.',
+          style: t.bodyLarge?.copyWith(color: p.inkMuted),
+        ),
 
-            return SizedBox(
-              height: 28,
-              child: Stack(
+        // ── Key facts ──
+        const SectionHead('Key facts'),
+        if (sig.available && sig.direction != null) ...[
+          LabelValueRow(
+            'Direction',
+            valueWidget: Text(
+              '${sig.isPositive ? Fmt.up : Fmt.down} ${sig.isPositive ? 'Positive' : 'Negative'}',
+              style: t.titleMedium?.copyWith(color: sig.isPositive ? p.up : p.down),
+            ),
+          ),
+          LabelValueRow(
+            'Chance of a positive return',
+            value: Fmt.probability(sig.probability),
+            note: 'Model estimate for the ${sig.horizon}-day horizon',
+            strong: true,
+          ),
+          LabelValueRow(
+            'Base rate',
+            value: sig.baseRate == null ? 'Not reported' : Fmt.probability(sig.baseRate),
+            note: 'How often ${sig.horizon}-day returns were positive in the training period',
+          ),
+          if (sig.edge != null) _EdgeRow(edge: sig.edge!),
+          LabelValueRow(
+            'Horizon',
+            value: '${sig.horizon} trading days',
+            note: 'Evaluated over ${sig.horizonMin} to ${sig.horizonMax} days',
+          ),
+        ],
+        LabelValueRow(
+          'Last close',
+          value: hasData ? Fmt.money(_data['price'] as num, currency: currency) : 'Not available',
+          strong: hasData,
+        ),
+        LabelValueRow(
+          'Data date',
+          value: _data['data_as_of'] == null
+              ? 'Not reported'
+              : '${Fmt.date(_data['data_as_of'])}, ${Fmt.timeWat(_data['data_as_of'])}',
+        ),
+        LabelValueRow(
+          'Freshness',
+          valueWidget: stale
+              ? const StaleTag(label: 'Stale: older than 4 days')
+              : Text('Current', style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+          note: stale ? 'Signals are hidden until newer closes arrive' : null,
+        ),
+        LabelValueRow(
+          'Source',
+          value: _data['data_source']?.toString() ?? 'Not reported',
+        ),
+        for (final (key, label) in const [('rsi_impact', 'RSI momentum'), ('ema_impact', 'EMA-50 trend')])
+          if (_data[key] is num)
+            _DriverRow(label: label, value: (_data[key] as num).toDouble()),
+
+        // ── Evidence ──
+        const SectionHead('Evidence'),
+        if (sig.evidence.isEmpty)
+          Text(
+            sig.available
+                ? 'The model published no evidence lines for this signal.'
+                : stale
+                ? 'No evidence is shown while the data is stale.'
+                : 'No evidence is published because no signal has passed review for this close.',
+            style: t.bodyMedium?.copyWith(color: p.inkMuted),
+          )
+        else
+          for (var i = 0; i < sig.evidence.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: Gap.md),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Positioned.fill(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: trackColor,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                    ),
+                  SizedBox(
+                    width: 26,
+                    child: Text('${i + 1}.', style: AppType.serif(size: 16, color: p.accent)),
                   ),
-                  Positioned(
-                    top: 0,
-                    bottom: 0,
-                    left: isPositive ? halfWidth : halfWidth - barWidth,
-                    width: barWidth,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: impactColor.withOpacity(0.75),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    top: 0,
-                    bottom: 0,
-                    left: halfWidth - 1,
-                    width: 2,
-                    child: Container(
-                      color: isDark ? Colors.white38 : Colors.grey[400],
-                    ),
-                  ),
+                  Expanded(child: Text(sig.evidence[i], style: t.bodyMedium)),
                 ],
               ),
-            );
-          },
+            ),
+
+        // ── Track record ──
+        if (sig.validation != null) _trackRecord(context, sig.validation!),
+
+        // ── Footer ──
+        const SizedBox(height: Gap.xl),
+        const HeavyRule(),
+        const SizedBox(height: Gap.md),
+        Text(
+          'This is a research signal, not advice. It is uncertain and may be wrong. '
+          'HybStockAdvisor does not place trades.',
+          style: t.bodySmall,
+        ),
+        const SizedBox(height: Gap.lg),
+        QuietButton('Ask about this note', onPressed: _ask),
+        const SizedBox(height: Gap.xs),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: LinkText('Open Bamboo, an external broker ↗', arrow: false, onTap: _openBroker),
+        ),
+      ],
+    );
+  }
+
+  Widget _trackRecord(BuildContext context, SignalValidation v) {
+    final t = context.text;
+    final p = context.pal;
+    String scores(double? model, double? baseline) => model == null || baseline == null
+        ? 'Not reported'
+        : '${Fmt.number(model, decimals: 3)} vs ${Fmt.number(baseline, decimals: 3)}';
+    String? verdict(double? model, double? baseline) {
+      if (model == null || baseline == null) return null;
+      final diff = baseline - model;
+      if (diff > 0) return 'Model beats the baseline by ${Fmt.number(diff, decimals: 3)}';
+      if (diff < 0) return 'Model is worse than the baseline by ${Fmt.number(-diff, decimals: 3)}';
+      return 'Model is level with the baseline';
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SectionHead('How reliable has this model been?'),
+        Text(
+          'The Brier score measures how close a model’s probabilities were to what happened. '
+          '0 is perfect. The baseline always predicts the base rate. Lower is better, so the '
+          'model only adds information when its score is below the baseline’s.',
+          style: t.bodyMedium?.copyWith(color: p.inkMuted),
+        ),
+        const SizedBox(height: Gap.sm),
+        LabelValueRow(
+          'Paper predictions',
+          value: Fmt.number(v.paperSamples),
+          note: 'Recorded before the outcome was known',
+        ),
+        LabelValueRow('Hit rate', value: Fmt.probability(v.paperHitRate)),
+        LabelValueRow(
+          'Brier score, paper tracking',
+          value: scores(v.paperBrier, v.paperBaselineBrier),
+          note: verdict(v.paperBrier, v.paperBaselineBrier),
+        ),
+        LabelValueRow(
+          'Brier score, backtest',
+          value: scores(v.backtestBrier, v.backtestBaselineBrier),
+          note: verdict(v.backtestBrier, v.backtestBaselineBrier),
+        ),
+        if (v.paperMeanReturnPct != null)
+          LabelValueRow(
+            'Average return per paper signal',
+            valueWidget: ChangeText(pct: v.paperMeanReturnPct, arrow: false),
+            note: 'After costs, in the signal’s direction',
+          ),
+        if (v.backtestExcessPct != null)
+          LabelValueRow(
+            'Backtest return vs benchmark',
+            valueWidget: ChangeText(pct: v.backtestExcessPct, arrow: false),
+            note: 'Average per signal, after costs',
+          ),
+        LabelValueRow(
+          'Model',
+          value: [
+            v.modelVersion ?? 'Version not reported',
+            if (v.reviewer != null || v.reviewedAt != null)
+              'reviewed${v.reviewer != null ? ' by ${v.reviewer}' : ''}${v.reviewedAt != null ? ' on ${Fmt.date(v.reviewedAt)}' : ''}',
+          ].join(', '),
+          showRule: false,
         ),
       ],
     );
   }
 }
 
-// ─────────────────────────────────────────────
-// AI Insights Loading Shimmer
-// ─────────────────────────────────────────────
-class _AiInsightsShimmer extends StatelessWidget {
-  final AnimationController controller;
-  final bool isDark;
-
-  const _AiInsightsShimmer({required this.controller, required this.isDark});
+/// Model probability minus base rate on a diverging bar.
+class _EdgeRow extends StatelessWidget {
+  final double edge;
+  const _EdgeRow({required this.edge});
 
   @override
   Widget build(BuildContext context) {
-    final baseColor = isDark
-        ? const Color(0xFF2A2D3E)
-        : const Color(0xFFE0E0E0);
-    final highlightColor = isDark
-        ? const Color(0xFF3A3D4E)
-        : const Color(0xFFF5F5F5);
-    final cardColor = isDark ? const Color(0xFF2A2D3E) : Colors.white;
-
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) {
-        final shimmer = LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: [baseColor, highlightColor, baseColor],
-          stops: [
-            (controller.value - 0.3).clamp(0.0, 1.0),
-            controller.value.clamp(0.0, 1.0),
-            (controller.value + 0.3).clamp(0.0, 1.0),
-          ],
-        );
-
-        Widget box(double w, double h, {double r = 8}) => Container(
-          width: w,
-          height: h,
-          decoration: BoxDecoration(
-            gradient: shimmer,
-            borderRadius: BorderRadius.circular(r),
-          ),
-        );
-
-        return SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+    final t = context.text;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 11),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // ── Header row placeholder ──
               Row(
                 children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      gradient: shimmer,
-                      borderRadius: BorderRadius.circular(10),
+                  Expanded(
+                    child: Text(
+                      'Difference from the base rate',
+                      style: t.bodyMedium?.copyWith(color: context.pal.inkMuted),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(child: box(double.infinity, 20)),
+                  Text(
+                    '${Fmt.arrow(edge).isEmpty ? '' : '${Fmt.arrow(edge)} '}${Fmt.points(edge)}',
+                    style: t.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: context.pal.signed(edge),
+                    ),
+                  ),
                 ],
               ),
-
-              const SizedBox(height: 14),
-
-              // ── Explanation text lines ──
-              box(double.infinity, 14),
-              const SizedBox(height: 6),
-              box(double.infinity, 14),
-              const SizedBox(height: 6),
-              box(200, 14),
-
-              const SizedBox(height: 24),
-
-              // ── 3 MetricCard placeholders ──
-              ...List.generate(3, (i) {
-                return Padding(
-                  padding: EdgeInsets.only(bottom: i < 2 ? 12.0 : 0.0),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 16,
-                    ),
-                    decoration: BoxDecoration(
-                      color: cardColor,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.04),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            gradient: shimmer,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              box(80, 12),
-                              const SizedBox(height: 6),
-                              box(120, 20),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: shimmer,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }),
-
-              const SizedBox(height: 28),
-
-              // ── Key Market Drivers title ──
-              box(180, 22),
-
-              const SizedBox(height: 16),
-
-              // ── Drivers card with 2 impact bar placeholders ──
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: cardColor,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.04),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    // Impact bar 1
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [box(100, 14), box(80, 14)],
-                        ),
-                        const SizedBox(height: 10),
-                        box(double.infinity, 28),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    // Impact bar 2
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [box(100, 14), box(80, 14)],
-                        ),
-                        const SizedBox(height: 10),
-                        box(double.infinity, 28),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // ── Safety Index Banner placeholder ──
-              Container(
-                width: double.infinity,
-                height: 160,
-                decoration: BoxDecoration(
-                  gradient: shimmer,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-              ),
-
-              const SizedBox(height: 20),
+              const SizedBox(height: Gap.sm),
+              // ±25 points fills the bar.
+              DivergingBar(value: (edge / 0.25).clamp(-1.0, 1.0)),
             ],
           ),
-        );
-      },
+        ),
+        const Hairline(),
+      ],
+    );
+  }
+}
+
+/// A driver score from −1 to 1 sent by the backend (shown only when present).
+class _DriverRow extends StatelessWidget {
+  final String label;
+  final double value;
+  const _DriverRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.text;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 11),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(child: Text(label, style: t.bodyMedium?.copyWith(color: context.pal.inkMuted))),
+                  Text(Fmt.number(value, decimals: 2), style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                ],
+              ),
+              const SizedBox(height: Gap.sm),
+              DivergingBar(value: value.clamp(-1.0, 1.0)),
+            ],
+          ),
+        ),
+        const Hairline(),
+      ],
+    );
+  }
+}
+
+/// A bar that grows left (negative) or right (positive) from a centre line,
+/// with a Negative / Neutral / Positive axis underneath.
+class DivergingBar extends StatelessWidget {
+  /// From −1 to 1.
+  final double value;
+  const DivergingBar({super.key, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.pal;
+    final t = context.text;
+    final color = value >= 0 ? p.up : p.down;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LayoutBuilder(
+          builder: (context, c) {
+            final half = c.maxWidth / 2;
+            final w = half * value.abs();
+            return SizedBox(
+              height: 14,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: p.rule, width: Stroke.hairline),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 2,
+                    bottom: 2,
+                    left: value >= 0 ? half : half - w,
+                    width: w,
+                    child: Container(color: color.withValues(alpha: 0.85)),
+                  ),
+                  Positioned(
+                    top: 0,
+                    bottom: 0,
+                    left: half - 0.5,
+                    width: 1,
+                    child: Container(color: p.ink),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Negative', style: t.bodySmall?.copyWith(fontSize: 11)),
+            Text('Neutral', style: t.bodySmall?.copyWith(fontSize: 11)),
+            Text('Positive', style: t.bodySmall?.copyWith(fontSize: 11)),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _NoteSkeleton extends StatelessWidget {
+  const _NoteSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Skeleton(
+      child: Padding(
+        padding: EdgeInsets.only(top: Gap.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SkeletonBox(width: 150, height: 10),
+            SizedBox(height: 12),
+            SkeletonBox(width: double.infinity, height: 22),
+            SizedBox(height: 8),
+            SkeletonBox(width: 220, height: 22),
+            SizedBox(height: 16),
+            SkeletonBox(width: double.infinity, height: 13),
+            SizedBox(height: 6),
+            SkeletonBox(width: double.infinity, height: 13),
+            SizedBox(height: 6),
+            SkeletonBox(width: 180, height: 13),
+            SizedBox(height: 28),
+            HeavyRule(),
+            SizedBox(height: 14),
+            SkeletonBox(width: 110, height: 18),
+            SizedBox(height: 16),
+            SkeletonBox(width: double.infinity, height: 16),
+            SizedBox(height: 18),
+            SkeletonBox(width: double.infinity, height: 16),
+            SizedBox(height: 18),
+            SkeletonBox(width: double.infinity, height: 16),
+            SizedBox(height: 18),
+            SkeletonBox(width: double.infinity, height: 16),
+          ],
+        ),
+      ),
     );
   }
 }

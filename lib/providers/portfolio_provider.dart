@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
-import 'package:hybstockadvisor/screens/dashboard.dart';
+import 'package:hybstockadvisor/models/market_stock.dart';
 import 'package:hybstockadvisor/services/api_service.dart';
+import 'package:hybstockadvisor/theme/format.dart';
 
 class PortfolioProvider extends ChangeNotifier {
   bool _isLoading = true;
@@ -9,20 +10,32 @@ class PortfolioProvider extends ChangeNotifier {
 
   bool _isFetchingAssets = false;
 
-  List<NigerianStock> _availableMarketStocks = [];
+  List<MarketStock> _availableMarketStocks = [];
   List<dynamic> _portfolioRaw = [];
   List<dynamic> _watchlistRaw = [];
   bool _hasFetchedAssetsOnce = false;
 
   DateTime? _assetsLastFetchedAt;
+  DateTime? _summaryAsOf;
   static const Duration _assetsTtl = Duration(minutes: 30);
 
   bool get isLoading => _isLoading;
   bool get isRefreshing => _isRefreshing;
   bool get hasError => _hasError;
 
-  List<NigerianStock> get availableMarketStocks =>
+  List<MarketStock> get availableMarketStocks =>
       List.unmodifiable(_availableMarketStocks);
+  /// When the market summary's source data was produced.
+  DateTime? get summaryAsOf => _summaryAsOf;
+
+  /// Company name from the market summary, or the symbol itself.
+  String nameFor(String symbol) {
+    for (final s in _availableMarketStocks) {
+      if (s.symbol == symbol) return s.name;
+    }
+    return symbol;
+  }
+
   List<dynamic> get portfolioRaw => List.unmodifiable(_portfolioRaw);
   List<dynamic> get watchlistRaw => List.unmodifiable(_watchlistRaw);
 
@@ -47,26 +60,10 @@ class PortfolioProvider extends ChangeNotifier {
 
     if (!hasMarketCache) {
       final summaryRes = await ApiService.getMarketSummary();
-      if (summaryRes != null && summaryRes['status'] == 'success') {
-        final List<dynamic> rawList = summaryRes['data'];
-        _availableMarketStocks = rawList.map((item) {
-          final String sym = item['symbol'];
-          return NigerianStock(
-            symbol: sym,
-            name: item['name'] ?? '$sym Plc',
-            marketCap: item['market_cap'] ?? '--',
-            price: (item['price'] as num).toDouble(),
-            change:
-                '${(item['change_pct'] as num).toDouble() >= 0 ? '+' : ''}${(item['change_pct'] as num).toDouble().toStringAsFixed(2)}%',
-            currency: (item['currency'] as String?) ?? 'NGN',
-            source: item['source']?.toString(),
-            asOf: item['as_of']?.toString(),
-            stale: item['stale'] == true,
-          );
-        }).toList();
-      } else {
-        _availableMarketStocks = [];
-      }
+      _availableMarketStocks = MarketStock.listFromSummary(summaryRes);
+      _summaryAsOf = Fmt.parse(
+        summaryRes?['meta'] is Map ? summaryRes!['meta']['as_of'] : null,
+      );
     }
 
     await refreshAssets(force: force, showRefreshing: false);
@@ -205,6 +202,7 @@ class PortfolioProvider extends ChangeNotifier {
     _watchlistRaw = [];
     _hasFetchedAssetsOnce = false;
     _assetsLastFetchedAt = null;
+    _summaryAsOf = null;
     notifyListeners();
   }
 }

@@ -1,6 +1,6 @@
 # HybStockAdvisor
 
-HybStockAdvisor is moving from a final-year project into a private research companion for West African investors. The first release focuses on daily NGX closing data, manual portfolios and watchlists, and Lexi’s timestamped research context. The app does not place trades. It hides directional signals until market data and model validation are explicitly approved.
+HybStockAdvisor is moving from a final-year project into a private research companion for West African investors. The first release focuses on daily NGX closing data, manual portfolios and watchlists, and Ask, a research assistant that answers from timestamped closes. The app does not place trades. It hides directional signals until market data and model validation are explicitly approved.
 
 ## Current product rules
 
@@ -27,9 +27,14 @@ See the backend repository’s `MARKET_DATA_SETUP.md` for database migration, pe
 ## App areas
 
 - **Dashboard:** NGX market summary and verified daily price history, with recency and unavailable states.
-- **Research details:** available evidence and validation context, or an explicit explanation that no signal passed review. Lexi is available for timestamped data questions and general explanations.
+- **Research:** an analyst's note for the selected stock: direction, probability against the base rate, horizon, data date and source, numbered evidence, and the model's Brier score against a baseline, or an explicit explanation that no signal passed review.
+- **Ask:** the research assistant, opened from the stock being viewed. It quotes dated closes in the app's own formats and keeps a not-advice line in view.
 - **Portfolio:** manual holdings and watchlists, showing local currency and closing-data recency. Market value and change alerts are omitted when data is missing or stale.
 - **Account:** login and password recovery; invite-only registration is enforced by the backend.
+
+## Design
+
+One token file, `lib/theme/tokens.dart`, holds colours (light and dark), type (Source Serif 4 headings, IBM Plex Sans body with tabular figures), spacing and radii. `lib/theme/format.dart` is the only place numbers, money and dates become text. Shared components live in `lib/widgets/ui.dart`.
 
 ## Checks
 

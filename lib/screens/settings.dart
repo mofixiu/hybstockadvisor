@@ -6,7 +6,9 @@ import 'package:hybstockadvisor/providers/notification_provider.dart';
 import 'package:hybstockadvisor/providers/theme_provider.dart';
 import 'package:hybstockadvisor/screens/auth/otp_verification.dart';
 import 'package:hybstockadvisor/services/api_service.dart';
+import 'package:hybstockadvisor/theme/tokens.dart';
 import 'package:hybstockadvisor/widgets/custom_page_route.dart';
+import 'package:hybstockadvisor/widgets/ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
@@ -18,7 +20,7 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  String _appVersion = '1.0.0';
+  String _appVersion = '';
 
   @override
   void initState() {
@@ -29,380 +31,114 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadVersion() async {
     try {
       final info = await PackageInfo.fromPlatform();
-      if (mounted) {
-        setState(() => _appVersion = '${info.version} (${info.buildNumber})');
-      }
+      if (mounted) setState(() => _appVersion = '${info.version} (${info.buildNumber})');
     } catch (_) {}
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF1A1A2E) : const Color(0xFFF2F4F7);
-    final cardColor = isDark ? const Color(0xFF2A2D3E) : Colors.white;
-    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
-
-    return Scaffold(
-      backgroundColor: bgColor,
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: bgColor,
-        centerTitle: true,
-        leading: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Container(
-            margin: const EdgeInsets.only(left: 16),
-            decoration: BoxDecoration(
-              color: cardColor,
-              borderRadius: BorderRadius.circular(10),
-              boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4),
-              ],
-            ),
-            child: Icon(Icons.arrow_back_ios_new, size: 16, color: textColor),
-          ),
-        ),
-        title: Text(
-          'Settings',
-          style: TextStyle(
-            color: textColor,
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 20),
-
-              // ── APPEARANCE ──
-              _SectionLabel(label: 'APPEARANCE', isDark: isDark),
-              const SizedBox(height: 12),
-              _buildCard(
-                cardColor: cardColor,
-                children: [
-                  _ToggleRow(
-                    icon: Icons.dark_mode_outlined,
-                    iconBg: const Color(0xFF2A2D3E),
-                    iconColor: const Color(0xFFBBC5E8),
-                    label: 'Dark Mode',
-                    textColor: textColor,
-                    isDark: isDark,
-                    value: isDark,
-                    onChanged: (val) async {
-                      context.read<ThemeProvider>().toggleTheme(val);
-                      final box = await Hive.openBox('user');
-                      await box.put('theme_dark', val);
-                    },
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 24),
-
-              // ── SECURITY ──
-              _SectionLabel(label: 'SECURITY', isDark: isDark),
-              const SizedBox(height: 12),
-              _buildCard(
-                cardColor: cardColor,
-                children: [
-                  _TapRow(
-                    icon: Icons.lock_outline,
-                    iconBg: const Color(0xFFDCEAFF),
-                    iconColor: const Color(0xFF2979FF),
-                    label: 'Change Password',
-                    textColor: textColor,
-                    isDark: isDark,
-                    onTap: () => _showChangePasswordSheet(
-                      context,
-                      isDark,
-                      cardColor,
-                      textColor,
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 24),
-
-              // ── DATA ──
-              _SectionLabel(label: 'DATA', isDark: isDark),
-              const SizedBox(height: 12),
-              _buildCard(
-                cardColor: cardColor,
-                children: [
-                  _TapRow(
-                    icon: Icons.cleaning_services_outlined,
-                    iconBg: const Color(0xFFFFF3E0),
-                    iconColor: const Color(0xFFF59E0B),
-                    label: 'Clear Cache',
-                    textColor: textColor,
-                    isDark: isDark,
-                    onTap: () async {
-                      final confirm = await showDialog<bool>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          backgroundColor: cardColor,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          title: Text(
-                            'Clear Cache',
-                            style: TextStyle(color: textColor),
-                          ),
-                          content: Text(
-                            'This will clear locally cached data. Your account and portfolio data will not be affected.',
-                            style: TextStyle(
-                              color: Colors.grey[500],
-                              fontSize: 13,
-                            ),
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx, false),
-                              child: Text(
-                                'Cancel',
-                                style: TextStyle(color: Colors.grey[500]),
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx, true),
-                              child: const Text(
-                                'Clear',
-                                style: TextStyle(color: Colors.red),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-
-                      if (confirm == true && mounted) {
-                        // Clear notification history
-                        await Provider.of<NotificationProvider>(
-                          context,
-                          listen: false,
-                        ).clearAll();
-
-                        final box = await Hive.openBox('user');
-                        // Preserve account-critical keys
-                        final keep = {
-                          'first_name': box.get('first_name'),
-                          'last_name': box.get('last_name'),
-                          'has_setup_portfolio': box.get('has_setup_portfolio'),
-                          'avatar_path': box.get('avatar_path'),
-                          'theme_dark': box.get('theme_dark'),
-                        };
-                        await box.clear();
-                        for (final e in keep.entries) {
-                          if (e.value != null) await box.put(e.key, e.value);
-                        }
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Cache cleared successfully'),
-                              backgroundColor: Colors.green,
-                            ),
-                          );
-                        }
-                      }
-                    },
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 24),
-
-              // ── APP INFO ──
-              _SectionLabel(label: 'APP INFO', isDark: isDark),
-              const SizedBox(height: 12),
-              _buildCard(
-                cardColor: cardColor,
-                children: [
-                  _InfoRow(
-                    icon: Icons.info_outline,
-                    iconBg: const Color(0xFFDCEAFF),
-                    iconColor: const Color(0xFF2979FF),
-                    label: 'Version',
-                    value: _appVersion,
-                    textColor: textColor,
-                  ),
-                ],
-              ),
-              SizedBox(height: 24),
-              Text(
-                "Please note that this is not financial advice, just a final year project. Always do your own research before making any investment decisions.",
-                style: TextStyle(color: Colors.grey[500], fontSize: 12),
-                textAlign: TextAlign.center,
-              ),
-
-              const SizedBox(height: 32),
-            ],
-          ),
-        ),
-      ),
-    );
+  Future<void> _setDark(bool value) async {
+    context.read<ThemeProvider>().toggleTheme(value);
+    final box = await Hive.openBox('user');
+    await box.put('theme_dark', value);
   }
 
-  Widget _buildCard({
-    required Color cardColor,
-    required List<Widget> children,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(children: children),
+  Future<void> _clearCache() async {
+    final confirm = await confirmAction(
+      context,
+      title: 'Clear cached data?',
+      message: 'This clears notifications and saved preferences on this phone. '
+          'Your account, holdings and watchlist are not affected.',
+      confirmLabel: 'Clear',
+      destructive: true,
     );
+    if (!confirm || !mounted) return;
+
+    await context.read<NotificationProvider>().clearAll();
+    final box = await Hive.openBox('user');
+    // Keep the keys the account and theme depend on.
+    final keep = {
+      'first_name': box.get('first_name'),
+      'last_name': box.get('last_name'),
+      'has_setup_portfolio': box.get('has_setup_portfolio'),
+      'avatar_path': box.get('avatar_path'),
+      'theme_dark': box.get('theme_dark'),
+    };
+    await box.clear();
+    for (final e in keep.entries) {
+      if (e.value != null) await box.put(e.key, e.value);
+    }
+    if (mounted) showNotice(context, 'Cached data cleared.');
   }
 
-  void _showChangePasswordSheet(
-    BuildContext context,
-    bool isDark,
-    Color cardColor,
-    Color textColor,
-  ) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _ChangePasswordSheet(
-        isDark: isDark,
-        cardColor: cardColor,
-        textColor: textColor,
-        onSuccess: (String email) {
+  void _changePassword() {
+    showAppSheet<void>(
+      context,
+      (_) => _ChangePasswordSheet(
+        onSuccess: (email) {
           Navigator.pop(context);
           context.pushFade(OtpVerification(email: email));
         },
       ),
     );
   }
-}
-
-// ─────────────────────────────────────────────
-// Toggle Row (switch)
-// ─────────────────────────────────────────────
-class _ToggleRow extends StatelessWidget {
-  final IconData icon;
-  final Color iconBg;
-  final Color iconColor;
-  final String label;
-  final Color textColor;
-  final bool isDark;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  const _ToggleRow({
-    required this.icon,
-    required this.iconBg,
-    required this.iconColor,
-    required this.label,
-    required this.textColor,
-    required this.isDark,
-    required this.value,
-    required this.onChanged,
-  });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: iconBg,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: iconColor, size: 20),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
-                color: textColor,
-              ),
-            ),
-          ),
-          Switch(
-            value: value,
-            onChanged: onChanged,
-            activeColor: const Color(0xFF0A3D62),
-          ),
-        ],
-      ),
-    );
-  }
-}
+    final p = context.pal;
+    final t = context.text;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-// ─────────────────────────────────────────────
-// Tap Row (with chevron)
-// ─────────────────────────────────────────────
-class _TapRow extends StatelessWidget {
-  final IconData icon;
-  final Color iconBg;
-  final Color iconColor;
-  final String label;
-  final Color textColor;
-  final bool isDark;
-  final VoidCallback onTap;
-
-  const _TapRow({
-    required this.icon,
-    required this.iconBg,
-    required this.iconColor,
-    required this.label,
-    required this.textColor,
-    required this.isDark,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
+    return Scaffold(
+      backgroundColor: p.paper,
+      appBar: AppBar(title: const Text('Settings')),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.only(bottom: Gap.xxl),
           children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: iconBg,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, color: iconColor, size: 20),
+            const _Group('Appearance'),
+            _Row(
+              icon: Icons.dark_mode_outlined,
+              label: 'Dark mode',
+              trailing: Switch(value: isDark, onChanged: _setDark),
+              onTap: () => _setDark(!isDark),
+              last: true,
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                  color: textColor,
-                ),
+            const _Group('Security'),
+            _Row(
+              icon: Icons.lock_outline,
+              label: 'Change password',
+              onTap: _changePassword,
+              last: true,
+            ),
+            const _Group('Data'),
+            _Row(
+              icon: Icons.delete_sweep_outlined,
+              label: 'Clear cached data',
+              onTap: _clearCache,
+              last: true,
+            ),
+            const _Group('About'),
+            _Row(
+              icon: Icons.info_outline,
+              label: 'Version',
+              trailing: Text(_appVersion.isEmpty ? '—' : _appVersion, style: t.bodyMedium?.copyWith(color: p.inkMuted)),
+              last: true,
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(Gap.page, Gap.xl, Gap.page, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const HeavyRule(),
+                  const SizedBox(height: Gap.md),
+                  Text(
+                    'HybStockAdvisor shows verified daily closes and reviewed research signals for NGX stocks. '
+                    'It is not financial advice and it does not place trades. Signals are uncertain; '
+                    'check the figures and do your own research before you invest.',
+                    style: t.bodySmall,
+                  ),
+                ],
               ),
             ),
-            Icon(Icons.chevron_right, color: Colors.grey[400], size: 20),
           ],
         ),
       ),
@@ -410,59 +146,68 @@ class _TapRow extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
-// Info Row (label + value, no chevron)
-// ─────────────────────────────────────────────
-class _InfoRow extends StatelessWidget {
-  final IconData icon;
-  final Color iconBg;
-  final Color iconColor;
+/// Group label with a hairline under it.
+class _Group extends StatelessWidget {
   final String label;
-  final String value;
-  final Color textColor;
+  const _Group(this.label);
 
-  const _InfoRow({
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(Gap.page, Gap.xl, Gap.page, 0),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Kicker(label),
+        const SizedBox(height: Gap.sm),
+        const Hairline(),
+      ],
+    ),
+  );
+}
+
+/// Plain settings row: ink icon, label, trailing control or chevron.
+class _Row extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+  /// The last row of a group gets a full-width rule; others are indented.
+  final bool last;
+  const _Row({
     required this.icon,
-    required this.iconBg,
-    required this.iconColor,
     required this.label,
-    required this.value,
-    required this.textColor,
+    this.trailing,
+    this.onTap,
+    this.last = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      child: Row(
+    final p = context.pal;
+    return InkWell(
+      onTap: onTap,
+      child: Column(
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: iconBg,
-              borderRadius: BorderRadius.circular(10),
+          Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: Gap.page,
+              vertical: trailing is Switch ? 6 : 14,
             ),
-            child: Icon(icon, color: iconColor, size: 20),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
-                color: textColor,
-              ),
+            child: Row(
+              children: [
+                Icon(icon, size: 20, color: p.ink),
+                const SizedBox(width: Gap.lg),
+                Expanded(child: Text(label, style: context.text.bodyLarge)),
+                trailing ??
+                    (onTap != null
+                        ? Icon(Icons.chevron_right, size: 20, color: p.inkFaint)
+                        : const SizedBox.shrink()),
+              ],
             ),
           ),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[500],
-              fontWeight: FontWeight.w500,
-            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: Gap.page),
+            child: last ? const Hairline() : const Hairline(indent: 36),
           ),
         ],
       ),
@@ -470,47 +215,10 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
-// Section Label
-// ─────────────────────────────────────────────
-class _SectionLabel extends StatelessWidget {
-  final String label;
-  final bool isDark;
-
-  const _SectionLabel({required this.label, required this.isDark});
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 11,
-          letterSpacing: 1.3,
-          fontWeight: FontWeight.w600,
-          color: Colors.grey[500],
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────
-// Change Password Bottom Sheet
-// ─────────────────────────────────────────────
+/// Sends a reset code to the account email, then continues to code entry.
 class _ChangePasswordSheet extends StatefulWidget {
-  final bool isDark;
-  final Color cardColor;
-  final Color textColor;
   final void Function(String email) onSuccess;
-
-  const _ChangePasswordSheet({
-    required this.isDark,
-    required this.cardColor,
-    required this.textColor,
-    required this.onSuccess,
-  });
+  const _ChangePasswordSheet({required this.onSuccess});
 
   @override
   State<_ChangePasswordSheet> createState() => _ChangePasswordSheetState();
@@ -530,165 +238,61 @@ class _ChangePasswordSheetState extends State<_ChangePasswordSheet> {
   Future<void> _sendOtp() async {
     final email = _emailController.text.trim();
     if (email.isEmpty) {
-      setState(() => _error = 'Please enter your email address');
+      setState(() => _error = 'Enter the email on your account.');
       return;
     }
     if (!email.contains('@') || !email.contains('.')) {
-      setState(() => _error = 'Please enter a valid email address');
+      setState(() => _error = 'Enter a valid email address.');
       return;
     }
-
     setState(() {
       _isLoading = true;
       _error = null;
     });
-
     final response = await ApiService.forgotPassword(email);
     if (!mounted) return;
-
     setState(() => _isLoading = false);
-
     if (response['status'] == 'success') {
       widget.onSuccess(email);
     } else {
       setState(() {
-        _error = response['detail'] ?? 'Failed to send OTP. Please try again.';
+        _error = response['detail']?.toString() ?? "Couldn't send the code. Try again.";
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final bgColor = widget.isDark
-        ? const Color(0xFF1A1A2E)
-        : const Color(0xFFF2F4F7);
-
+    final t = context.text;
     return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
-      child: Container(
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Drag handle
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[400],
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // Title
-            Text(
-              'Change Password',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: widget.textColor,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Enter your account email to receive a verification code.',
-              style: TextStyle(fontSize: 13, color: Colors.grey[500]),
-            ),
-            const SizedBox(height: 24),
-
-            // Email field
-            Container(
-              decoration: BoxDecoration(
-                color: widget.cardColor,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: _error != null
-                      ? Colors.red.withOpacity(0.6)
-                      : Colors.transparent,
-                  width: 1.5,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 6,
-                  ),
-                ],
-              ),
-              child: TextField(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SheetFrame(
+        title: 'Change password',
+        subtitle: Text("We'll email a 6-digit code to confirm it's you.", style: t.bodySmall),
+        child: Padding(
+          padding: const EdgeInsets.only(top: Gap.lg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
                 autofocus: true,
-                style: TextStyle(color: widget.textColor, fontSize: 15),
-                decoration: InputDecoration(
-                  hintText: 'Email address',
-                  hintStyle: TextStyle(color: Colors.grey[400]),
-                  prefixIcon: const Icon(
-                    Icons.email_outlined,
-                    color: Color(0xFF2979FF),
-                    size: 20,
-                  ),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 16),
-                ),
+                autocorrect: false,
+                textInputAction: TextInputAction.send,
                 onSubmitted: (_) => _sendOtp(),
-              ),
-            ),
-
-            // Error message
-            if (_error != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                _error!,
-                style: const TextStyle(color: Colors.red, fontSize: 12),
-              ),
-            ],
-
-            const SizedBox(height: 24),
-
-            // Send OTP button
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: _isLoading ? null : _sendOtp,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0A3D62),
-                  disabledBackgroundColor: Colors.grey,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  elevation: 0,
+                decoration: InputDecoration(
+                  labelText: 'Email',
+                  prefixIcon: const Icon(Icons.mail_outline, size: 20),
+                  errorText: _error,
+                  errorMaxLines: 3,
                 ),
-                child: _isLoading
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2.5,
-                        ),
-                      )
-                    : const Text(
-                        'Send OTP',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
               ),
-            ),
-          ],
+              const SizedBox(height: Gap.lg),
+              PrimaryButton('Send code', onPressed: _sendOtp, loading: _isLoading),
+            ],
+          ),
         ),
       ),
     );

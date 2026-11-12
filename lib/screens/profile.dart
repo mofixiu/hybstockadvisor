@@ -1,6 +1,6 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:hybstockadvisor/providers/notification_provider.dart';
 import 'package:hybstockadvisor/providers/portfolio_provider.dart';
 import 'package:hybstockadvisor/providers/profile_provider.dart';
@@ -9,8 +9,11 @@ import 'package:hybstockadvisor/screens/notification_settings.dart';
 import 'package:hybstockadvisor/screens/personal_info.dart';
 import 'package:hybstockadvisor/screens/settings.dart';
 import 'package:hybstockadvisor/services/api_service.dart';
+import 'package:hybstockadvisor/theme/tokens.dart';
 import 'package:hybstockadvisor/widgets/bottomNavBar.dart';
 import 'package:hybstockadvisor/widgets/custom_page_route.dart';
+import 'package:hybstockadvisor/widgets/ui.dart';
+import 'package:provider/provider.dart';
 
 class Profile extends StatefulWidget {
   const Profile({super.key});
@@ -19,654 +22,256 @@ class Profile extends StatefulWidget {
   State<Profile> createState() => _ProfileState();
 }
 
-class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
-  AnimationController? _shimmerController;
-
-  Future<void> _onRefreshProfile() async {
-    if (!mounted) return;
-    await context.read<ProfileProvider>().load(force: true);
-  }
-
+class _ProfileState extends State<Profile> {
   @override
   void initState() {
     super.initState();
-    _shimmerController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat();
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      context.read<ProfileProvider>().load();
+      if (mounted) context.read<ProfileProvider>().load();
     });
   }
 
-  @override
-  void dispose() {
-    _shimmerController?.dispose();
-    super.dispose();
-  }
+  Future<void> _refresh() => context.read<ProfileProvider>().load(force: true);
 
-  // Reload data when returning from PersonalInfo
-  void _reloadOnReturn(BuildContext context, Widget page) async {
-    final didSave = await this.context.pushFade<bool>(page);
+  /// Opens Personal Info and reloads the profile if it was saved.
+  Future<void> _openPersonalInfo() async {
+    final saved = await context.pushFade<bool>(const PersonalInfo());
     if (!mounted) return;
-    if (didSave == true) {
-      await this.context.read<ProfileProvider>().load(force: true);
-    }
+    if (saved == true) await context.read<ProfileProvider>().load(force: true);
   }
 
-  Widget _buildShimmerBox({
-    required bool isDark,
-    required double width,
-    required double height,
-    double radius = 8,
-    BoxShape shape = BoxShape.rectangle,
-  }) {
-    if (_shimmerController == null) {
-      return SizedBox(width: width, height: height);
-    }
-
-    final baseColor = isDark
-        ? const Color(0xFF2A2D3E)
-        : const Color(0xFFE0E0E0);
-    final highlightColor = isDark
-        ? const Color(0xFF3A3D4E)
-        : const Color(0xFFF5F5F5);
-
-    return AnimatedBuilder(
-      animation: _shimmerController!,
-      builder: (context, _) {
-        final shimmer = LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: [baseColor, highlightColor, baseColor],
-          stops: [
-            (_shimmerController!.value - 0.3).clamp(0.0, 1.0),
-            _shimmerController!.value.clamp(0.0, 1.0),
-            (_shimmerController!.value + 0.3).clamp(0.0, 1.0),
-          ],
-        );
-
-        return Container(
-          width: width,
-          height: height,
-          decoration: BoxDecoration(
-            shape: shape,
-            gradient: shimmer,
-            borderRadius: shape == BoxShape.circle
-                ? null
-                : BorderRadius.circular(radius),
-          ),
-        );
-      },
+  Future<void> _signOut() async {
+    final confirm = await confirmAction(
+      context,
+      title: 'Sign out?',
+      message: 'You will need to log in again to see your portfolio.',
+      confirmLabel: 'Sign out',
+      destructive: true,
     );
+    if (!confirm || !mounted) return;
+
+    await context.read<NotificationProvider>().clearAll();
+    if (!mounted) return;
+    context.read<ProfileProvider>().resetForSessionChange();
+    context.read<PortfolioProvider>().resetForSessionChange();
+    await ApiService.clearUserData();
+    if (!mounted) return;
+    context.pushFadeAndRemoveUntil(const Login(), (route) => false);
   }
 
   @override
   Widget build(BuildContext context) {
-    final profileProvider = context.watch<ProfileProvider>();
-    final isProfileLoading = profileProvider.isLoading;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF1A1A2E) : const Color(0xFFF2F4F7);
-    final cardColor = isDark ? const Color(0xFF2A2D3E) : Colors.white;
-    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final profile = context.watch<ProfileProvider>();
+    final p = context.pal;
+    final t = context.text;
+    final loading = profile.isLoading && profile.fullName.isEmpty;
 
     return Scaffold(
-      extendBody: true,
-      backgroundColor: bgColor,
+      backgroundColor: p.paper,
       bottomNavigationBar: const BottomNavBar(currentIndex: 3),
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: bgColor,
-        automaticallyImplyLeading: false,
-        centerTitle: true,
-        title: Text(
-          'Profile',
-          style: TextStyle(
-            color: textColor,
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
       body: SafeArea(
         bottom: false,
-        child: Column(
-          children: [
-            // ── App Bar ──
-            Expanded(
-              child: RefreshIndicator(
-                onRefresh: _onRefreshProfile,
-                child: SingleChildScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.only(
-                    left: 20,
-                    right: 20,
-                    top: 0,
-                    bottom: 120,
-                  ),
-                  child: Column(
-                    children: [
-                    const SizedBox(height: 10),
-
-                    // ── Avatar ──
-                    Stack(
-                      children: [
-                        Container(
-                          width: 110,
-                          height: 110,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.grey[200],
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
-                                blurRadius: 12,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: ClipOval(
-                            child: isProfileLoading
-                                ? _buildShimmerBox(
-                                    isDark: isDark,
-                                    width: 110,
-                                    height: 110,
-                                    shape: BoxShape.circle,
-                                  )
-                                : (profileProvider.avatarPath != null
-                                      ? Image.file(
-                                          File(profileProvider.avatarPath!),
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (_, __, ___) => Icon(
-                                            Icons.person,
-                                            size: 60,
-                                            color: Colors.grey[400],
-                                          ),
-                                        )
-                                      : Image.asset(
-                                          'assets/images/avatar.png',
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (_, __, ___) => Icon(
-                                            Icons.person,
-                                            size: 60,
-                                            color: Colors.grey[400],
-                                          ),
-                                        )),
-                          ),
-                        ),
-                        // Green checkmark badge
-                        Positioned(
-                          bottom: 4,
-                          right: 4,
-                          child: Container(
-                            width: 26,
-                            height: 26,
-                            decoration: BoxDecoration(
-                              color: Colors.green,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 2),
-                            ),
-                            child: const Icon(
-                              Icons.check,
-                              color: Colors.white,
-                              size: 14,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 14),
-
-                    // ── Name ──
-                    if (isProfileLoading)
-                      _buildShimmerBox(
-                        isDark: isDark,
-                        width: 190,
-                        height: 26,
-                        radius: 8,
-                      )
-                    else
-                      Text(
-                        profileProvider.fullName,
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: textColor,
-                        ),
-                      ),
-
-                    const SizedBox(height: 8),
-
-                    // ── Investor Badge (dynamic) ──
-                    if (isProfileLoading)
-                      _buildShimmerBox(
-                        isDark: isDark,
-                        width: 160,
-                        height: 30,
-                        radius: 20,
-                      )
-                    else
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? profileProvider.tierColor.withOpacity(0.15)
-                              : profileProvider.tierBgColor,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
+        child: RefreshIndicator(
+          onRefresh: _refresh,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.only(bottom: Gap.xxl),
+            children: [
+              const PageTitle('Profile'),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: Gap.page),
+                child: loading
+                    ? const Skeleton(
                         child: Row(
-                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
-                              profileProvider.tierIcon,
-                              color: profileProvider.tierColor,
-                              size: 16,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              profileProvider.investorTier,
-                              style: TextStyle(
-                                color: profileProvider.tierColor,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
+                            SkeletonBox(width: 64, height: 64, radius: 32),
+                            SizedBox(width: Gap.lg),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  SkeletonBox(width: 180, height: 22),
+                                  SizedBox(height: Gap.sm),
+                                  SkeletonBox(width: 140, height: 14),
+                                ],
                               ),
                             ),
                           ],
                         ),
-                      ),
-
-                    const SizedBox(height: 24),
-
-                    // // ── Stats Row ──
-                    // Row(
-                    //   children: [
-                    //     // Portfolio
-                    //     Container(
-                    //       padding: const EdgeInsets.symmetric(
-                    //         vertical: 18,
-                    //         horizontal: 16,
-                    //       ),
-                    //       decoration: BoxDecoration(
-                    //         color: cardColor,
-                    //         borderRadius: BorderRadius.circular(16),
-                    //         boxShadow: [
-                    //           BoxShadow(
-                    //             color: Colors.black.withOpacity(0.05),
-                    //             blurRadius: 8,
-                    //             offset: const Offset(0, 2),
-                    //           ),
-                    //         ],
-                    //       ),
-                    //       child: Column(
-                    //         crossAxisAlignment: CrossAxisAlignment.start,
-                    //         children: [
-                    //           Text(
-                    //             'PORTFOLIO',
-                    //             style: TextStyle(
-                    //               fontSize: 10,
-                    //               letterSpacing: 1.1,
-                    //               color: Colors.grey[500],
-                    //               fontWeight: FontWeight.w600,
-                    //             ),
-                    //           ),
-                    //           const SizedBox(height: 6),
-                    //           Text(
-                    //             '+14.5%',
-                    //             style: TextStyle(
-                    //               fontSize: 24,
-                    //               fontWeight: FontWeight.bold,
-                    //               color: textColor,
-                    //             ),
-                    //           ),
-                    //         ],
-                    //       ),
-                    //     ),
-                    //   ],
-                    // ),
-                    const SizedBox(height: 28),
-
-                    // ── Account Settings ──
-                    _SectionLabel(label: 'ACCOUNT SETTINGS', isDark: isDark),
-                    const SizedBox(height: 12),
-
-                    _SettingsCard(
-                      isDark: isDark,
-                      cardColor: cardColor,
-                      textColor: textColor,
-                      items: [
-                        _SettingsItem(
-                          icon: Icons.person_outline,
-                          iconBg: const Color(0xFFDCEAFF),
-                          iconColor: const Color(0xFF2979FF),
-                          label: 'Personal Info',
-                          onTap: () =>
-                              _reloadOnReturn(context, const PersonalInfo()),
-                        ),
-                        _SettingsItem(
-                          icon: Icons.settings_outlined,
-                          iconBg: const Color(0xFFFFE0E0),
-                          iconColor: const Color(0xFFF44336),
-                          label: 'Settings',
-                          onTap: () => context.pushFade(const SettingsScreen()),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // ── Preferences ──
-                    _SectionLabel(label: 'PREFERENCES', isDark: isDark),
-                    const SizedBox(height: 12),
-
-                    _SettingsCard(
-                      isDark: isDark,
-                      cardColor: cardColor,
-                      textColor: textColor,
-                      items: [
-                        _SettingsItem(
-                          icon: Icons.notifications_outlined,
-                          iconBg: const Color(0xFFFFF3E0),
-                          iconColor: const Color(0xFFF59E0B),
-                          label: 'Notifications',
-                          onTap: () =>
-                              context.pushFade(const NotificationSettings()),
-                        ),
-                        _SettingsItem(
-                          icon: Icons.shield_outlined,
-                          iconBg: const Color(0xFFD6F5E3),
-                          iconColor: const Color(0xFF2DBD6E),
-                          label: 'Security',
-                          onTap: () =>
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Coming soon'),
-                                  duration: Duration(seconds: 2),
+                      )
+                    : Row(
+                        children: [
+                          _Avatar(path: profile.avatarPath, name: profile.fullName),
+                          const SizedBox(width: Gap.lg),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  profile.fullName.isEmpty ? 'Your account' : profile.fullName,
+                                  style: t.headlineSmall,
                                 ),
-                              ),
-                        ),
-                        _SettingsItem(
-                          icon: Icons.help_outline,
-                          iconBg: const Color(0xFFE8E8E8),
-                          iconColor: const Color(0xFF555555),
-                          label: 'Help & Support',
-                          onTap: () =>
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Coming soon'),
-                                  duration: Duration(seconds: 2),
-                                ),
-                              ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 28),
-
-                    // ── Sign Out ──
-                    Container(
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: cardColor,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.red.withOpacity(0.3)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.04),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: TextButton.icon(
-                        onPressed: () async {
-                          // Show confirmation dialog first
-                          final confirm = await showDialog<bool>(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                              backgroundColor: cardColor,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              title: Text(
-                                'Sign Out',
-                                style: TextStyle(color: textColor),
-                              ),
-                              content: Text(
-                                'Are you sure you want to sign out?',
-                                style: TextStyle(
-                                  color: Colors.grey[500],
-                                  fontSize: 13,
-                                ),
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(ctx, false),
-                                  child: Text(
-                                    'Cancel',
-                                    style: TextStyle(color: Colors.grey[500]),
-                                  ),
-                                ),
-                                TextButton(
-                                  onPressed: () => Navigator.pop(ctx, true),
-                                  child: const Text(
-                                    'Sign Out',
-                                    style: TextStyle(color: Colors.red),
-                                  ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  profile.countsLine ?? 'Holdings unavailable right now',
+                                  style: t.bodySmall,
                                 ),
                               ],
                             ),
-                          );
-
-                          if (confirm == true && context.mounted) {
-                            await context
-                                .read<NotificationProvider>()
-                                .clearAll();
-                            if (!context.mounted) return;
-                            context
-                                .read<ProfileProvider>()
-                                .resetForSessionChange();
-                            context
-                                .read<PortfolioProvider>()
-                                .resetForSessionChange();
-
-                            // Clear all saved user data & token
-                            await ApiService.clearUserData();
-
-                            if (!context.mounted) return;
-                            // Navigate to Login and CLEAR the entire stack
-                            // Navigator.of(context).pushAndRemoveUntil(
-                            //   MaterialPageRoute(builder: (_) => const Login()),
-                            //   (route) => false,
-                            // );
-                            context.pushFadeAndRemoveUntil(
-                              const Login(),
-                              (route) => false,
-                            );
-                          }
-                        },
-                        icon: const Icon(
-                          Icons.logout,
-                          color: Colors.red,
-                          size: 20,
-                        ),
-                        label: const Text(
-                          'Sign Out',
-                          style: TextStyle(
-                            color: Colors.red,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
                           ),
-                        ),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                        ),
+                        ],
                       ),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    Text(
-                      'Version 1.0.0',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[400]),
-                    ),
-
-                      const SizedBox(height: 20),
-                    ],
-                  ),
-                ),
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────
-// Section Label
-// ─────────────────────────────────────────────
-class _SectionLabel extends StatelessWidget {
-  final String label;
-  final bool isDark;
-
-  const _SectionLabel({required this.label, required this.isDark});
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 11,
-          letterSpacing: 1.3,
-          fontWeight: FontWeight.w600,
-          color: Colors.grey[500],
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────
-// Settings Card (grouped items)
-// ─────────────────────────────────────────────
-class _SettingsCard extends StatelessWidget {
-  final bool isDark;
-  final Color cardColor;
-  final Color textColor;
-  final List<_SettingsItem> items;
-
-  const _SettingsCard({
-    required this.isDark,
-    required this.cardColor,
-    required this.textColor,
-    required this.items,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        children: items.asMap().entries.map((entry) {
-          final i = entry.key;
-          final item = entry.value;
-          final isLast = i == items.length - 1;
-
-          return Column(
-            children: [
-              GestureDetector(
-                onTap: item.onTap,
-                behavior: HitTestBehavior.opaque,
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: Gap.page),
+                child: SectionHead('Account'),
+              ),
+              _MenuRow(
+                icon: Icons.person_outline,
+                label: 'Personal info',
+                onTap: _openPersonalInfo,
+              ),
+              _MenuRow(
+                icon: Icons.settings_outlined,
+                label: 'Settings',
+                onTap: () => context.pushFade(const SettingsScreen()),
+              ),
+              _MenuRow(
+                icon: Icons.notifications_none,
+                label: 'Notifications',
+                onTap: () => context.pushFade(const NotificationSettings()),
+              ),
+              const _MenuRow(
+                icon: Icons.shield_outlined,
+                label: 'Security',
+                note: 'Not available yet',
+              ),
+              const _MenuRow(
+                icon: Icons.help_outline,
+                label: 'Help and support',
+                note: 'Not available yet',
+                showRule: false,
+              ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(Gap.page, Gap.xl, Gap.page, 0),
+                child: Hairline(),
+              ),
+              InkWell(
+                onTap: _signOut,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: Gap.page, vertical: 14),
                   child: Row(
                     children: [
-                      // Icon container
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: item.iconBg,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(item.icon, color: item.iconColor, size: 20),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Text(
-                          item.label,
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w500,
-                            color: textColor,
-                          ),
-                        ),
-                      ),
-                      Icon(
-                        Icons.chevron_right,
-                        color: Colors.grey[400],
-                        size: 20,
+                      Icon(Icons.logout, size: 20, color: p.down),
+                      const SizedBox(width: Gap.lg),
+                      Text(
+                        'Sign out',
+                        style: t.bodyLarge?.copyWith(color: p.down, fontWeight: FontWeight.w500),
                       ),
                     ],
                   ),
                 ),
               ),
-              if (!isLast)
-                Divider(
-                  height: 1,
-                  indent: 70,
-                  color: isDark
-                      ? Colors.white.withOpacity(0.06)
-                      : Colors.grey.withOpacity(0.15),
-                ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: Gap.page),
+                child: Hairline(),
+              ),
             ],
-          );
-        }).toList(),
+          ),
+        ),
       ),
     );
   }
 }
 
-// ─────────────────────────────────────────────
-// Settings Item data model
-// ─────────────────────────────────────────────
-class _SettingsItem {
+/// Photo if one is saved, otherwise the person's initials.
+class _Avatar extends StatelessWidget {
+  final String? path;
+  final String name;
+  const _Avatar({required this.path, required this.name});
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.pal;
+    final initials = name
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .take(2)
+        .map((w) => w[0].toUpperCase())
+        .join();
+    final fallback = Center(
+      child: Text(
+        initials.isEmpty ? '?' : initials,
+        style: AppType.serif(size: 24, color: p.inkMuted),
+      ),
+    );
+    return Container(
+      width: 64,
+      height: 64,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: p.surface,
+        border: Border.all(color: p.rule),
+      ),
+      child: ClipOval(
+        child: path == null
+            ? fallback
+            : Image.file(
+                File(path!),
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => fallback,
+              ),
+      ),
+    );
+  }
+}
+
+/// A plain row: ink icon, label, chevron (or a note when unavailable).
+class _MenuRow extends StatelessWidget {
   final IconData icon;
-  final Color iconBg;
-  final Color iconColor;
   final String label;
   final VoidCallback? onTap;
-
-  const _SettingsItem({
+  final String? note;
+  final bool showRule;
+  const _MenuRow({
     required this.icon,
-    required this.iconBg,
-    required this.iconColor,
     required this.label,
     this.onTap,
+    this.note,
+    this.showRule = true,
   });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.pal;
+    final t = context.text;
+    final enabled = onTap != null;
+    return InkWell(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: Gap.page, vertical: 14),
+            child: Row(
+              children: [
+                Icon(icon, size: 20, color: enabled ? p.ink : p.inkFaint),
+                const SizedBox(width: Gap.lg),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: t.bodyLarge?.copyWith(color: enabled ? p.ink : p.inkFaint),
+                  ),
+                ),
+                if (note != null)
+                  Text(note!, style: t.bodySmall)
+                else
+                  Icon(Icons.chevron_right, size: 20, color: p.inkFaint),
+              ],
+            ),
+          ),
+          if (showRule) const Hairline(indent: Gap.page + 36, endIndent: Gap.page),
+        ],
+      ),
+    );
+  }
 }
