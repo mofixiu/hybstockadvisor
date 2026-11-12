@@ -26,8 +26,15 @@ class MarketDataProvider extends ChangeNotifier {
 
     final future = () async {
       final result = await fetcher();
-      _cache[key] = result;
-      _cacheTime[key] = DateTime.now();
+      // Only successful answers are cached, so a retry after a failure
+      // (for example a server cold start) asks the server again.
+      if (result != null) {
+        _cache[key] = result;
+        _cacheTime[key] = DateTime.now();
+      } else {
+        _cache.remove(key);
+        _cacheTime.remove(key);
+      }
       return result;
     }();
 

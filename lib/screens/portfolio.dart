@@ -4,6 +4,7 @@ import 'package:hybstockadvisor/models/app_notification.dart';
 import 'package:hybstockadvisor/models/market_stock.dart';
 import 'package:hybstockadvisor/providers/notification_provider.dart';
 import 'package:hybstockadvisor/providers/portfolio_provider.dart';
+import 'package:hybstockadvisor/services/api_service.dart';
 import 'package:hybstockadvisor/theme/format.dart';
 import 'package:hybstockadvisor/theme/tokens.dart';
 import 'package:hybstockadvisor/widgets/ask_sheet.dart';
@@ -89,6 +90,12 @@ class _Row {
 
   /// Day change shown in tables: hidden when the close is stale.
   double? get dayPct => stale ? null : changePct;
+
+  /// No verified close at all (different from an old, stale one).
+  bool get noClose => price == null;
+
+  /// Why a row is not counted or has no day change, for a short tag.
+  String get missingLabel => noClose ? 'No close' : 'Stale';
 }
 
 class Portfolio extends StatefulWidget {
@@ -403,7 +410,8 @@ class _PortfolioState extends State<Portfolio> {
                 child: provider.hasError
                     ? MessageBlock(
                         title: 'Portfolio not loaded',
-                        body: "Couldn't reach the server. Check your connection and try again.",
+                        body: ApiService.failureFor('assets') ??
+                            "Couldn't load your portfolio. Try again.",
                         actionLabel: 'Try again',
                         onAction: () => _load(force: true),
                       )
@@ -563,31 +571,44 @@ class _Summary extends StatelessWidget {
             ],
           ),
           const SizedBox(height: Gap.md),
-          Text(
-            [
-              'Cost ${included.isEmpty ? Fmt.missing : Fmt.money(cost, currency: currency)}',
-              '${included.length} of ${rows.length} holdings priced',
-              if (latest != null) 'closes as of ${Fmt.date(latest)}',
-            ].join(' · '),
-            style: t.bodySmall,
-          ),
-          if (excluded.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(
-                    text: 'Not counted: ',
-                    style: TextStyle(color: p.warn, fontWeight: FontWeight.w600),
-                  ),
-                  TextSpan(
-                    text: '${excluded.map((r) => r.symbol).join(', ')} '
-                        '(${excluded.any((r) => r.price == null) ? 'no verified close' : 'stale close'}).',
-                  ),
-                ],
-              ),
+          if (included.isEmpty)
+            Text(
+              'None of your ${rows.length} holdings has a verified close right now, so value, '
+              'day change and return can\'t be worked out. '
+              'Cost of all holdings: ${Fmt.money(rows.fold<double>(0, (s, r) => s + (r.cost ?? 0)), currency: currency)}.',
+              style: t.bodySmall,
+            )
+          else ...[
+            Text(
+              [
+                'Cost ${Fmt.money(cost, currency: currency)}',
+                '${included.length} of ${rows.length} holdings priced',
+                if (latest != null) 'closes as of ${Fmt.date(latest)}',
+              ].join(' · '),
               style: t.bodySmall,
             ),
+            for (final (label, group) in [
+              ('no verified close', excluded.where((r) => r.noClose).toList()),
+              ('stale close', excluded.where((r) => !r.noClose).toList()),
+            ])
+              if (group.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: 'Not counted, $label: ',
+                          style: TextStyle(color: p.warn, fontWeight: FontWeight.w600),
+                        ),
+                        TextSpan(
+                          text: '${group.map((r) => r.noClose ? r.symbol : '${r.symbol} (${Fmt.date(r.asOf)})').join(', ')}.',
+                        ),
+                      ],
+                    ),
+                    style: t.bodySmall,
+                  ),
+                ),
           ],
         ],
       ),
@@ -720,7 +741,7 @@ class _HoldingRow extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       row.stale
-                          ? const StaleTag()
+                          ? StaleTag(label: row.missingLabel)
                           : ChangeText(pct: row.dayPct, arrow: false, style: figure),
                       ChangeText(pct: row.gainPct, arrow: false, style: small),
                     ],
@@ -783,7 +804,7 @@ class _WatchRow extends StatelessWidget {
                         Fmt.money(row.price, currency: row.currency),
                         style: figure.copyWith(color: row.stale ? p.inkFaint : null),
                       ),
-                      if (row.stale) Text(Fmt.date(row.asOf), style: t.bodySmall),
+                      if (row.stale && !row.noClose) Text(Fmt.date(row.asOf), style: t.bodySmall),
                     ],
                   ),
                 ),
@@ -792,7 +813,7 @@ class _WatchRow extends StatelessWidget {
                   child: Align(
                     alignment: Alignment.centerRight,
                     child: row.stale
-                        ? const StaleTag()
+                        ? StaleTag(label: row.missingLabel)
                         : ChangeText(pct: row.dayPct, arrow: false, style: figure),
                   ),
                 ),
@@ -824,8 +845,14 @@ class _BreakdownSheet extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const SizedBox(height: Gap.lg),
-            Kicker(row.stale ? 'Value at last close · stale' : 'Value at last close',
-                color: row.stale ? p.warn : null),
+            Kicker(
+              row.noClose
+                  ? 'No verified close'
+                  : row.stale
+                  ? 'Value at last close · stale'
+                  : 'Value at last close',
+              color: row.stale ? p.warn : null,
+            ),
             const SizedBox(height: 6),
             Text(
               row.value == null ? 'Not available' : Fmt.money(row.value, currency: row.currency),
@@ -851,7 +878,7 @@ class _BreakdownSheet extends StatelessWidget {
             LabelValueRow(
               'Day change',
               valueWidget: row.stale
-                  ? const StaleTag()
+                  ? StaleTag(label: row.missingLabel)
                   : ChangeText(pct: row.dayPct, amount: row.dayAmount, currency: row.currency),
             ),
             LabelValueRow(
@@ -860,7 +887,10 @@ class _BreakdownSheet extends StatelessWidget {
               showRule: false,
             ),
             const SizedBox(height: Gap.sm),
-            FreshnessLine(asOf: row.asOf, source: row.source, stale: row.stale),
+            if (row.noClose)
+              Text('The server has no verified close for this stock.', style: t.bodySmall)
+            else
+              FreshnessLine(asOf: row.asOf, source: row.source, stale: row.stale),
             const SizedBox(height: Gap.xl),
             QuietButton(
               'Ask about ${row.symbol}',

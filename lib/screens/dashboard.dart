@@ -75,10 +75,12 @@ class _DashboardState extends State<Dashboard> {
         _loadingMarket = false;
         _loadingStock = false;
         _error = res == null
-            ? "Couldn't reach the server. Check your connection and try again."
+            ? ApiService.failureFor('summary') ?? "Couldn't load market data. Try again."
             : meta['reason'] == 'market_data_not_enabled_for_this_account'
-            ? 'Verified NGX data is not enabled for this account yet.'
-            : 'No verified NGX closing data is available right now.';
+            ? 'Verified NGX data is not enabled for this account yet, so no prices or signals can be shown.'
+            : meta['reason'] == 'market_data_not_configured'
+            ? 'The server has no verified NGX data source set up, so no prices or signals can be shown.'
+            : 'The server returned no NGX closing prices. Pull down to try again later.';
       });
       return;
     }
@@ -110,7 +112,7 @@ class _DashboardState extends State<Dashboard> {
     if (res == null || res['status'] != 'success') {
       setState(() {
         _loadingStock = false;
-        _error = "Couldn't load $ticker. Check your connection and try again.";
+        _error = ApiService.failureFor('forecast:$ticker') ?? "Couldn't load $ticker. Try again.";
       });
       return;
     }
@@ -186,7 +188,7 @@ class _DashboardState extends State<Dashboard> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: Gap.page),
                   child: MessageBlock(
-                    title: 'No market data',
+                    title: _emptyTitle(_error),
                     body: _error,
                     actionLabel: 'Try again',
                     onAction: () => _loadMarket(force: true),
@@ -556,6 +558,12 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 }
+
+/// Heading for the empty Home: an outage reads differently from no data.
+String _emptyTitle(String? message) =>
+    message != null && message.contains('server has a problem')
+    ? 'Market data is unavailable'
+    : 'No market data';
 
 class _RangeButton extends StatelessWidget {
   final String label;

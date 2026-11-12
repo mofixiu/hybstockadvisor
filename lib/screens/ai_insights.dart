@@ -64,7 +64,7 @@ class _AiInsightsState extends State<AiInsights> {
     if (res == null || res['status'] != 'success' || res['data'] is! Map) {
       setState(() {
         _loading = false;
-        _error = "Couldn't load the note for $ticker. Check your connection and try again.";
+        _error = ApiService.failureFor('insights:$ticker') ?? "Couldn't load the note for $ticker. Try again.";
       });
       return;
     }
@@ -262,10 +262,16 @@ class _AiInsightsState extends State<AiInsights> {
         ),
         LabelValueRow(
           'Freshness',
-          valueWidget: stale
+          valueWidget: !hasData
+              ? Text('No verified close', style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w500))
+              : stale
               ? const StaleTag(label: 'Stale: older than 4 days')
               : Text('Current', style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
-          note: stale ? 'Signals are hidden until newer closes arrive' : null,
+          note: !hasData
+              ? 'The server has no verified close for this stock'
+              : stale
+              ? 'Signals are hidden until newer closes arrive'
+              : null,
         ),
         LabelValueRow(
           'Source',
@@ -281,6 +287,8 @@ class _AiInsightsState extends State<AiInsights> {
           Text(
             sig.available
                 ? 'The model published no evidence lines for this signal.'
+                : !hasData
+                ? 'No evidence is shown without a verified close.'
                 : stale
                 ? 'No evidence is shown while the data is stale.'
                 : 'No evidence is published because no signal has passed review for this close.',

@@ -220,50 +220,66 @@ class ApiService {
   }
 
   // 2. The specific function to fetch our AI Data
-  static Future<Map<String, dynamic>?> getStockForecast(String ticker) async {
-    try {
-      final response = await _dio.get('/forecast/$ticker');
+  // ── Market data ───────────────────────────────────────
 
-      if (response.statusCode == 200) {
-        return response.data as Map<String, dynamic>;
+  static final Map<String, String> _failures = {};
+
+  /// Why the last request for [key] failed, as a plain sentence for the user,
+  /// or null if it succeeded. Keys: 'summary', 'forecast:TICKER',
+  /// 'insights:TICKER', 'assets'.
+  static String? failureFor(String key) => _failures[key];
+
+  /// Plain wording for a failed request. A server error is not the user's
+  /// connection, so it never tells them to check it.
+  static String describeFailure(Object error) {
+    if (error is DioException) {
+      switch (error.type) {
+        case DioExceptionType.connectionTimeout:
+        case DioExceptionType.sendTimeout:
+        case DioExceptionType.receiveTimeout:
+          return 'The server took too long to answer. It may be starting up; try again in a minute.';
+        case DioExceptionType.connectionError:
+          return "Couldn't reach the server. Check your connection and try again.";
+        default:
+          break;
       }
+      final code = error.response?.statusCode;
+      if (code != null && code >= 500) {
+        return 'The HybStockAdvisor server has a problem (error $code), so no data can be shown. '
+            "It isn't your connection. Try again later.";
+      }
+      if (code != null) {
+        return 'The server turned the request down (error $code). Try again later.';
+      }
+    }
+    return 'Something went wrong loading the data. Try again.';
+  }
+
+  static Future<Map<String, dynamic>?> _getJson(String key, String path) async {
+    try {
+      final response = await _dio.get(path);
+      if (response.statusCode == 200 && response.data is Map) {
+        _failures.remove(key);
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+      _failures[key] = 'The server sent an answer the app could not read. Try again later.';
       return null;
-    } on DioException catch (e) {
-      log('Market forecast request failed: ${e.type}');
-      return null;
-    } catch (_) {
-      log('Market forecast response could not be read');
+    } catch (e) {
+      log('Request failed: $path (${e is DioException ? e.type : e.runtimeType})');
+      _failures[key] = describeFailure(e);
       return null;
     }
   }
 
-  static Future<Map<String, dynamic>?> getMarketSummary() async {
-    try {
-      final response = await _dio.get('/summary');
+  static Future<Map<String, dynamic>?> getStockForecast(String ticker) =>
+      _getJson('forecast:$ticker', '/forecast/$ticker');
 
-      if (response.statusCode == 200) {
-        return response.data as Map<String, dynamic>;
-      }
-      return null;
-    } catch (_) {
-      log('Market summary request failed');
-      return null;
-    }
-  }
+  static Future<Map<String, dynamic>?> getMarketSummary() =>
+      _getJson('summary', '/summary');
 
-  static Future<Map<String, dynamic>?> getInsights(String ticker) async {
-    try {
-      final response = await _dio.get('/insights/$ticker');
+  static Future<Map<String, dynamic>?> getInsights(String ticker) =>
+      _getJson('insights:$ticker', '/insights/$ticker');
 
-      if (response.statusCode == 200) {
-        return response.data as Map<String, dynamic>;
-      }
-      return null;
-    } catch (_) {
-      log('Research details request failed');
-      return null;
-    }
-  }
   // --- AUTHENTICATION METHODS ---
 
   static Future<Map<String, dynamic>> login(
@@ -286,11 +302,14 @@ class ApiService {
         } else {
           return {
             'status': 'error',
-            'detail': "The server couldn't sign you in (error ${e.response!.statusCode}). Try again later.",
+            'detail': (e.response!.statusCode ?? 0) >= 500
+                ? "The server isn't working right now (error ${e.response!.statusCode}), so you can't sign in. "
+                      "It isn't your password or your connection. Try again later."
+                : "The server couldn't sign you in (error ${e.response!.statusCode}). Try again later.",
           };
         }
       }
-      return {'status': 'error', 'detail': "Couldn't reach the server. Check your connection and try again."};
+      return {'status': 'error', 'detail': describeFailure(e)};
     }
   }
 
@@ -354,21 +373,15 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>?> getUserAssets() async {
-    try {
-      final userId = await _getUserId();
-      if (userId == null) return null;
-
-      // 2. Fixed the double /api/api typo (Fixed 404 Error)
-      final response = await _dio.get('/user/$userId/assets');
-
-      if (response.statusCode == 200 && response.data['status'] == 'success') {
-        return response.data['data'];
-      }
-      return null;
-    } catch (_) {
-      log('Private portfolio request failed');
-      return null;
+    final userId = await _getUserId();
+    if (userId == null) return null;
+    final res = await _getJson('assets', '/user/$userId/assets');
+    if (res == null) return null;
+    if (res['status'] == 'success' && res['data'] is Map) {
+      return Map<String, dynamic>.from(res['data'] as Map);
     }
+    _failures['assets'] = 'The server sent an answer the app could not read. Try again later.';
+    return null;
   }
 
   static Future<Map<String, dynamic>> addToWatchlist({
@@ -546,6 +559,11 @@ class ApiService {
       if (code == 502) {
         return const ChatResult.error(
           "Ask couldn't answer just now. Try again in a moment.",
+        );
+      }
+      if (code != null && code >= 500) {
+        return ChatResult.error(
+          "The server has a problem (error $code), so Ask can't answer right now. Try again later.",
         );
       }
       if (code == 422) {
